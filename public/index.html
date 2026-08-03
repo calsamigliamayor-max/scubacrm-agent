@@ -245,39 +245,48 @@
     const text = input.value.trim()
     if (!text) return
     input.value = ''
-    P().messages.push({ role: 'user', content: text })
+    // Fijamos AQUÍ a qué perfil pertenece este envío — si el usuario cambia de
+    // pestaña de cliente mientras esperamos la respuesta, esta variable sigue
+    // apuntando al perfil correcto (P() en cambio devolvería el que esté activo
+    // en ese momento, mezclando conversaciones de clientes distintos).
+    const profile = P()
+    profile.messages.push({ role: 'user', content: text })
     render()
     sendBtn.disabled = true
     const typing = el('typing', 'escribiendo…'); chat.appendChild(typing); chat.scrollTop = chat.scrollHeight
     try {
-      const payload = P().messages.filter(m => m.role === 'user' || m.role === 'assistant').map(m => ({ role: m.role, content: m.content }))
+      const payload = profile.messages.filter(m => m.role === 'user' || m.role === 'assistant').map(m => ({ role: m.role, content: m.content }))
       const r = await fetch('/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: payload, phone: P().phone })
+        body: JSON.stringify({ messages: payload, phone: profile.phone })
       })
       const data = await r.json()
       typing.remove()
-      if (data.error) { P().messages.push({ role: 'assistant', content: '⚠️ ' + data.error }) }
+      if (data.error) { profile.messages.push({ role: 'assistant', content: '⚠️ ' + data.error }) }
       else {
         for (const tc of (data.toolCalls || [])) {
-          P().messages.push({ role: 'tool', name: tc.name, data: tc.result })
+          profile.messages.push({ role: 'tool', name: tc.name, data: tc.result })
           if (tc.name === 'create_booking') {
             if (tc.result.bookingId) {
-              P().pollBookingId = tc.result.bookingId
-              if (tc.result.clientName) { P().name = tc.result.clientName; renderProfiles() }
-              startPollingActive()   // modo live: escucha al CRM
+              profile.pollBookingId = tc.result.bookingId
+              if (tc.result.clientName) { profile.name = tc.result.clientName; renderProfiles() }
+              if (profile === P()) startPollingActive()   // modo live: solo si sigue siendo el perfil activo
             } else {
-              P().lastBooking = tc.result; P().demoStep = 1   // modo simulado: barra manual
+              profile.lastBooking = tc.result; profile.demoStep = 1   // modo simulado: barra manual
             }
           }
         }
-        if (data.reply) P().messages.push({ role: 'assistant', content: data.reply })
+        if (data.reply) profile.messages.push({ role: 'assistant', content: data.reply })
       }
     } catch (e) {
       typing.remove()
-      P().messages.push({ role: 'assistant', content: '⚠️ Error de conexión: ' + e.message })
+      profile.messages.push({ role: 'assistant', content: '⚠️ Error de conexión: ' + e.message })
     }
-    render(); renderDemo(); sendBtn.disabled = false; input.focus()
+    // Solo re-renderizamos si el perfil que acaba de recibir respuesta sigue siendo
+    // el que se está viendo — si no, no tocamos la pantalla (ya se actualizará él
+    // solo cuando el usuario vuelva a esa pestaña, con render() al hacer switchProfile).
+    if (profile === P()) { render(); renderDemo() }
+    sendBtn.disabled = false; input.focus()
   }
 
   // Reinicia SOLO la conversación del perfil activo (mantiene nombre y teléfono)
