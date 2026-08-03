@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hammerz · Agent Playground</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root { --teal:#008069; --bg:#0b141a; --panel:#111b21; --in:#202c33; --out:#005c4b; }
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; background:#e9edef; height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; padding:8px 0; }
+  .topbar { display:flex; gap:6px; align-items:center; flex-wrap:wrap; width:100%; max-width:460px; padding:0 6px; }
+  .topbar .chip { background:#fff; border:1px solid #cfd8dc; border-radius:16px; padding:5px 12px; font-size:12px; cursor:pointer; color:#333; white-space:nowrap; }
+  .topbar .chip.active { background:var(--teal); color:#fff; border-color:var(--teal); }
+  .topbar .add { background:transparent; border:1px dashed #9aa7ad; border-radius:16px; padding:5px 10px; font-size:12px; cursor:pointer; color:#667; }
+  .topbar .chip:hover, .topbar .add:hover { filter:brightness(0.97); }
+  .phone { width:100%; max-width:460px; height:86vh; display:flex; flex-direction:column; background:var(--bg); border-radius:18px; overflow:hidden; box-shadow:0 12px 40px rgba(0,0,0,.35); }
+  header { background:var(--teal); color:#fff; padding:14px 16px; display:flex; align-items:center; gap:12px; }
+  header .av { width:40px; height:40px; border-radius:50%; background:#fff; display:flex; align-items:center; justify-content:center; font-size:20px; overflow:hidden; flex-shrink:0; }
+  header .av img { width:100%; height:100%; object-fit:cover; }
+  header h1 { font-size:15px; font-weight:600; }
+  header p { font-size:12px; opacity:.85; }
+  header .reset { margin-left:auto; background:rgba(255,255,255,.15); border:0; color:#fff; padding:6px 10px; border-radius:8px; font-size:12px; cursor:pointer; }
+  header .reset + .reset { margin-left:6px; }
+  header .reset:hover { background:rgba(255,255,255,.28); }
+  #chat { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:8px; background:#0b141a; }
+  .row { display:flex; }
+  .row.user { justify-content:flex-end; }
+  .bubble { max-width:82%; padding:8px 11px; border-radius:10px; font-size:14px; line-height:1.4; color:#e9edef; white-space:pre-wrap; word-break:break-word; }
+  .user .bubble { background:var(--out); border-bottom-right-radius:3px; }
+  .bot .bubble { background:var(--in); border-bottom-left-radius:3px; }
+  .tool { align-self:center; max-width:92%; background:#1d2a30; border:1px dashed #3b4a52; border-radius:10px; padding:8px 10px; font-size:12px; color:#8fa4ae; }
+  .tool b { color:#66d9b8; }
+  .tool pre { margin-top:4px; white-space:pre-wrap; word-break:break-word; color:#c7d3d9; font-size:11px; }
+  .typing { color:#8696a0; font-size:13px; font-style:italic; padding:2px 4px; }
+  footer { display:flex; gap:8px; padding:10px; background:#111b21; }
+  #input { flex:1; background:#2a3942; border:0; border-radius:20px; padding:10px 14px; color:#e9edef; font-size:14px; outline:none; }
+  #send { width:44px; height:44px; border:0; border-radius:50%; background:var(--teal); color:#fff; font-size:18px; cursor:pointer; }
+  #send:disabled { opacity:.4; cursor:default; }
+  .hint { text-align:center; font-size:11px; color:#8696a0; background:#182229; padding:5px; }
+  .demo-bar { padding:8px 10px; background:#0e1b22; border-top:1px solid #22323b; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  .demo-bar .lbl { font-size:11px; color:#7aa7b8; }
+  .demo-bar button { background:#1f2c33; color:#c7f0e0; border:1px solid #2f4750; border-radius:14px; padding:5px 10px; font-size:11px; cursor:pointer; }
+  .demo-bar button:hover:not(:disabled) { background:#26363d; }
+  .demo-bar button:disabled { opacity:.35; cursor:default; }
+  .doc { display:flex; align-items:center; gap:8px; background:rgba(0,0,0,.18); border-radius:8px; padding:7px 9px; margin-bottom:5px; cursor:pointer; }
+  .doc:hover { background:rgba(0,0,0,.30); }
+  .doc .ic { width:34px; height:34px; border-radius:7px; background:#e5484d; color:#fff; display:flex; align-items:center; justify-content:center; font-size:9px; font-weight:700; flex-shrink:0; }
+  .doc .nm { font-size:12px; color:#e9edef; font-weight:500; }
+  .doc .sub { font-size:10px; color:#8696a0; }
+</style>
+</head>
+<body>
+  <div id="profiles" class="topbar"></div>
+  <div class="phone">
+    <header>
+      <div class="av"><img src="logo.jpg" alt="logo" onerror="this.parentNode.textContent='🤿'" /></div>
+      <div>
+        <h1>Scuba Malapascua</h1>
+        <p>agente · playground</p>
+      </div>
+      <button class="reset" id="demoToggle" onclick="toggleDemo()" title="Controles de demo" style="display:none">🎬</button>
+      <button class="reset" onclick="reset()">Reiniciar</button>
+    </header>
+    <div class="hint" id="hint">🔒 Simulación aislada · no crea reservas reales · sin conexión con el CRM</div>
+    <div id="chat"></div>
+    <div id="demo" class="demo-bar" style="display:none"></div>
+    <footer>
+      <input id="input" placeholder="Escribe como si fueras el cliente…" autocomplete="off" />
+      <button id="send" onclick="send()">➤</button>
+    </footer>
+  </div>
+
+<script>
+  // ── Perfiles: varios clientes, cada uno con su teléfono y su conversación ──
+  let profiles = []
+  let activeIdx = 0
+  let phoneCounter = 0
+  let demoOpen = false     // toggle del desplegable de demo (global)
+  let pollTimer = null     // solo el perfil activo hace polling
+  let LIVE = false         // ¿modo live? (se sabe tras consultar /mode)
+
+  const chat = document.getElementById('chat')
+  const input = document.getElementById('input')
+  const sendBtn = document.getElementById('send')
+  const demoBar = document.getElementById('demo')
+  const profilesBar = document.getElementById('profiles')
+
+  function genPhone() { phoneCounter++; return '+346' + String(phoneCounter).padStart(8, '0') }
+  function newProfile(name, phone) {
+    return { name, phone: phone || genPhone(), messages: [], pollBookingId: null, shownIds: new Set(), lastBooking: null, demoStep: 0 }
+  }
+  function P() { return profiles[activeIdx] }   // perfil activo
+
+  function el(cls, html) { const d = document.createElement('div'); d.className = cls; d.innerHTML = html; return d }
+  function esc(s){ return (s||'').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) }
+  function fmt(s){ return esc(s).replace(/\*([^*\n]+)\*/g,'<b>$1</b>').replace(/_([^_\n]+)_/g,'<i>$1</i>').replace(/~([^~\n]+)~/g,'<s>$1</s>') }
+
+  // ── Barra de perfiles ──────────────────────────────────────────────────────
+  function renderProfiles() {
+    profilesBar.innerHTML = ''
+    profiles.forEach((p, i) => {
+      const c = el('chip' + (i === activeIdx ? ' active' : ''), esc(p.name))
+      c.title = p.phone
+      c.onclick = () => switchProfile(i)
+      profilesBar.appendChild(c)
+    })
+    const add = el('add', '+ Nuevo cliente')
+    add.onclick = addProfile
+    profilesBar.appendChild(add)
+  }
+  function addProfile() {
+    const suggested = genPhone()   // sugerencia por defecto (única)
+    const entered = prompt('📱 Teléfono del nuevo cliente\n\nCámbialo para controlar la conversación y evitar duplicados,\no deja el sugerido y pulsa Aceptar:', suggested)
+    if (entered === null) return   // canceló → no crea nada
+    const phone = entered.trim() || suggested
+    // Si ya tienes abierto un cliente con ese teléfono, lo reutilizamos (no duplicamos).
+    const existingIdx = profiles.findIndex(p => p.phone === phone)
+    if (existingIdx !== -1) {
+      alert('Ya tienes un cliente con ese teléfono en esta sesión. Abro esa conversación.')
+      switchProfile(existingIdx)
+      return
+    }
+    profiles.push(newProfile('Cliente ' + (profiles.length + 1), phone))
+    switchProfile(profiles.length - 1)
+  }
+  function switchProfile(i) {
+    activeIdx = i; demoOpen = false
+    renderProfiles(); render(); renderDemo(); startPollingActive(); input.focus()
+  }
+
+  // ── Render del chat del perfil activo ──────────────────────────────────────
+  function render() {
+    chat.innerHTML = ''
+    for (const m of P().messages) {
+      if (m.role === 'tool') {
+        chat.appendChild(el('tool', `<b>🔧 ${esc(m.name)}</b><pre>${esc(JSON.stringify(m.data, null, 2))}</pre>`))
+      } else {
+        let inner = ''
+        if (m.attachment) inner += `<div class="doc"><div class="ic">PDF</div><div><div class="nm">${esc(m.attachment.name)}</div><div class="sub">Documento · toca para abrir</div></div></div>`
+        inner += `<div>${fmt(m.content)}</div>`
+        const row = el('row ' + (m.role === 'user' ? 'user' : 'bot'), `<div class="bubble">${inner}</div>`)
+        if (m.attachment) {
+          const d = row.querySelector('.doc')
+          if (d) d.onclick = () => { if (m.attachment.url) window.open(m.attachment.url, '_blank'); else openInvoice(m.attachment.booking) }
+        }
+        chat.appendChild(row)
+      }
+    }
+    chat.scrollTop = chat.scrollHeight
+  }
+
+  // ── Polling al CRM (modo live) del perfil activo ───────────────────────────
+  function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null } }
+  function pollTick() {
+    const p = P()
+    // (a) Mensajes que el MANAGER escribió a mano en la conversación (aunque aún no haya reserva).
+    fetch('/lead-messages/' + encodeURIComponent(p.phone)).then(r => r.json()).then(d => {
+      let added = false
+      for (const m of (d.messages || [])) {
+        if (p.shownIds.has(m.id)) continue
+        p.shownIds.add(m.id)
+        p.messages.push({ role: 'assistant', content: m.content })
+        added = true
+      }
+      if (added) render()
+    }).catch(() => {})
+    // (b) Mensajes ligados a la RESERVA (facturas, formularios…), solo cuando ya existe.
+    if (!p.pollBookingId) return
+    fetch('/booking-messages/' + p.pollBookingId).then(r => r.json()).then(d => {
+      let added = false
+      for (const m of (d.messages || [])) {
+        if (p.shownIds.has(m.id)) continue
+        p.shownIds.add(m.id)
+        p.messages.push({ role: 'assistant', content: m.content, attachment: m.attachmentName ? { name: m.attachmentName, url: m.attachmentUrl } : null })
+        added = true
+      }
+      if (added) render()
+    }).catch(() => {})
+  }
+  function startPollingActive() {
+    stopPolling()
+    if (LIVE) { pollTick(); pollTimer = setInterval(pollTick, 3000) }   // en live escuchamos siempre al CRM
+  }
+
+  // ── Continuación transaccional SIMULADA (botones manuales, modo simulado) ──
+  function fmtDate(d) { if (!d) return 'tu fecha reservada'; const dt = new Date(('' + d).substring(0, 10) + 'T12:00:00'); return isNaN(dt) ? d : dt.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }) }
+  function botMsg(content, attachment) { P().messages.push({ role: 'assistant', content, attachment: attachment || null }); render() }
+  function injectInvoice() {
+    const b = P().lastBooking || {}
+    const total = b.totalPrice ? `₱ ${Number(b.totalPrice).toLocaleString()}` : 'el importe indicado'
+    botMsg(`¡Hola ${b.clientName || ''}! 🤿 Tu reserva en Scuba Malapascua ha sido *confirmada*.\n\n📅 Fecha: ${fmtDate(b.activityDate)}\n💰 Total: ${total}\n\nAdjuntamos tu factura. Para asegurar tu plaza, paga el *50% de depósito* por transferencia o InstaPay y envíanos el comprobante. ¡Nos vemos en el agua! 🌊`,
+      { name: `Factura #${b.bookingRef || 'XXXXXX'}.pdf`, booking: b })
+  }
+  function injectForm() {
+    const b = P().lastBooking || {}
+    botMsg(`¡Hola ${b.clientName || ''}! ✅ Hemos recibido tu pago.\n\nPor favor, completa el formulario de buceo antes de tu inmersión:\n\n👤 https://scubamalapascua.com/form/${(b.bookingRef || 'xxxx').toLowerCase()}\n\nEs importante hacerlo con antelación. ¡Nos vemos pronto! 🌊`)
+  }
+  function injectThankYou() {
+    const b = P().lastBooking || {}
+    botMsg(`¡Hola ${b.clientName || ''}! 🤿 ¡Gracias por completar tu formulario! Todo está listo. Te esperamos el día de tu inmersión (${fmtDate(b.activityDate)}). Te enviaremos recordatorios antes con toda la info importante. ¡Nos vemos en el agua! 🦈`)
+  }
+
+  function toggleDemo() { demoOpen = !demoOpen; renderDemo() }
+  function renderDemo() {
+    const toggle = document.getElementById('demoToggle')
+    const hasBar = !!P().lastBooking
+    if (toggle) toggle.style.display = hasBar ? 'inline-block' : 'none'
+    if (!hasBar || !demoOpen) { demoBar.style.display = 'none'; return }
+    demoBar.style.display = 'flex'
+    demoBar.innerHTML = '<span class="lbl">🎬 Demo:</span>'
+    const steps = [
+      { s: 1, label: '▶ El centro acepta y envía factura', fn: injectInvoice },
+      { s: 2, label: '▶ Cliente paga 50% → enviar formulario', fn: injectForm },
+      { s: 3, label: '▶ Formulario completado → mensaje final', fn: injectThankYou },
+    ]
+    for (const st of steps) {
+      const b = document.createElement('button')
+      b.textContent = st.label
+      b.disabled = P().demoStep !== st.s
+      b.onclick = () => { st.fn(); P().demoStep = st.s + 1; renderDemo() }
+      demoBar.appendChild(b)
+    }
+    if (P().demoStep > 3) { const done = document.createElement('span'); done.className = 'lbl'; done.textContent = '✓ Flujo completo'; demoBar.appendChild(done) }
+  }
+
+  function openInvoice(b) {
+    b = b || {}
+    const total = b.totalPrice ? Number(b.totalPrice).toLocaleString() : '—'
+    const deposit = b.totalPrice ? Math.round(b.totalPrice / 2).toLocaleString() : '—'
+    const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Factura ${esc(b.bookingRef || '')}</title>
+      <style>body{font-family:Arial,sans-serif;max-width:600px;margin:40px auto;color:#222;padding:0 20px}h1{color:#008069;margin-bottom:4px}.muted{color:#888}.row{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #eee}.tot{font-size:20px;font-weight:bold;margin-top:18px;border:0}.dep{margin-top:20px;color:#008069;font-weight:bold}</style></head>
+      <body><h1>🤿 Scuba Malapascua</h1><p class="muted">Factura de reserva · #${esc(b.bookingRef || '')} <b>(SIMULADA)</b></p>
+      <div class="row"><span>Cliente</span><b>${esc(b.clientName || '—')}</b></div>
+      <div class="row"><span>Servicio</span><b>${esc(b.service || '—')}</b></div>
+      <div class="row"><span>Fecha</span><b>${esc(fmtDate(b.activityDate))}</b></div>
+      <div class="row"><span>Personas</span><b>${esc('' + (b.numPeople || '—'))}</b></div>
+      <div class="row"><span>Equipo de alquiler</span><b>${b.rentalEquipment ? 'Sí' : 'No'}</b></div>
+      <div class="row tot"><span>Total</span><span>₱ ${total}</span></div>
+      <p class="dep">Depósito para confirmar (50%): ₱ ${deposit}</p></body></html>`
+    window.open(URL.createObjectURL(new Blob([html], { type: 'text/html' })), '_blank')
+  }
+
+  // ── Enviar mensaje ─────────────────────────────────────────────────────────
+  async function send() {
+    const text = input.value.trim()
+    if (!text) return
+    input.value = ''
+    P().messages.push({ role: 'user', content: text })
+    render()
+    sendBtn.disabled = true
+    const typing = el('typing', 'escribiendo…'); chat.appendChild(typing); chat.scrollTop = chat.scrollHeight
+    try {
+      const payload = P().messages.filter(m => m.role === 'user' || m.role === 'assistant').map(m => ({ role: m.role, content: m.content }))
+      const r = await fetch('/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: payload, phone: P().phone })
+      })
+      const data = await r.json()
+      typing.remove()
+      if (data.error) { P().messages.push({ role: 'assistant', content: '⚠️ ' + data.error }) }
+      else {
+        for (const tc of (data.toolCalls || [])) {
+          P().messages.push({ role: 'tool', name: tc.name, data: tc.result })
+          if (tc.name === 'create_booking') {
+            if (tc.result.bookingId) {
+              P().pollBookingId = tc.result.bookingId
+              if (tc.result.clientName) { P().name = tc.result.clientName; renderProfiles() }
+              startPollingActive()   // modo live: escucha al CRM
+            } else {
+              P().lastBooking = tc.result; P().demoStep = 1   // modo simulado: barra manual
+            }
+          }
+        }
+        if (data.reply) P().messages.push({ role: 'assistant', content: data.reply })
+      }
+    } catch (e) {
+      typing.remove()
+      P().messages.push({ role: 'assistant', content: '⚠️ Error de conexión: ' + e.message })
+    }
+    render(); renderDemo(); sendBtn.disabled = false; input.focus()
+  }
+
+  // Reinicia SOLO la conversación del perfil activo (mantiene nombre y teléfono)
+  function reset() {
+    const { name, phone } = P()
+    profiles[activeIdx] = { name, phone, messages: [], pollBookingId: null, shownIds: new Set(), lastBooking: null, demoStep: 0 }
+    demoOpen = false; stopPolling(); render(); renderDemo(); input.focus()
+  }
+
+  // Avisa si el agente está conectado al CRM real (modo LIVE)
+  fetch('/mode').then(r => r.json()).then(d => {
+    if (d.mode === 'live') {
+      LIVE = true
+      const h = document.getElementById('hint')
+      h.textContent = '🟢 MODO LIVE · conectado al CRM · las acciones son REALES'
+      h.style.background = '#3a1414'; h.style.color = '#ff9b9b'
+      startPollingActive()   // escucha al CRM desde el principio (mensajes del manager)
+    }
+  }).catch(() => {})
+
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') send() })
+
+  // Init: un perfil por defecto
+  profiles = [newProfile('Cliente 1')]
+  renderProfiles(); render(); renderDemo()
+</script>
+</body>
+</html>

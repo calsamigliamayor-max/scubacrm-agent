@@ -1,0 +1,16 @@
+{
+  "name": "hammerz-agent-playground",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Playground aislado para probar el agente de reservas propio (sin conexión con el CRM).",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.109.0",
+    "dotenv": "^17.0.0",
+    "express": "^4.19.2",
+    "twilio": "^6.0.2"
+  }
+}
