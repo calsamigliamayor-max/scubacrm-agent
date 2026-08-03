@@ -2,6 +2,7 @@ require('dotenv').config()
 const express = require('express')
 const path = require('path')
 const Anthropic = require('@anthropic-ai/sdk')
+const twilio = require('twilio')
 const { SYSTEM_PROMPT, TOOLS } = require('./knowledge')
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -14,6 +15,12 @@ const AGENT_MODE    = process.env.AGENT_MODE || 'simulated'
 const BACKEND_URL   = process.env.BACKEND_URL || 'https://scubacrm-backend-production.up.railway.app'
 const DEMO_PHONE    = process.env.DEMO_PHONE || '+34600000000'
 const AGENT_SECRET  = process.env.AGENT_SECRET || ''
+
+// ─── Twilio (WhatsApp real) ─────────────────────────────────────────────────
+const TWILIO_ACCOUNT_SID     = process.env.TWILIO_ACCOUNT_SID || ''
+const TWILIO_AUTH_TOKEN      = process.env.TWILIO_AUTH_TOKEN || ''
+const TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER || ''
+const twilioClient = (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN) ? twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) : null
 
 const app = express()
 app.use(express.json())
@@ -187,99 +194,108 @@ async function runTool(name, input, phone) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Chat: recibe el historial visible, corre el bucle agéntico (tool use) y
-// devuelve la respuesta de texto + las herramientas que se hayan usado.
+// Un turno completo del bucle agéntico (tool use): recibe el historial visible +
+// el teléfono, devuelve la respuesta de texto + las herramientas usadas. La usan
+// tanto /chat (playground en el navegador) como el webhook real de WhatsApp.
+// ─────────────────────────────────────────────────────────────────────────────
+async function runAgentTurn(history, phone) {
+  const convo = history.map(m => ({ role: m.role, content: m.content }))
+  const systemText = SYSTEM_PROMPT.replace('{{TODAY}}', new Date().toISOString().slice(0, 10))
+  // El knowledge base no cambia entre mensajes → lo cacheamos (solo este bloque lleva
+  // cache_control). La primera llamada lo procesa entero; las siguientes lo cobran a ~1/10.
+  const system = [{ type: 'text', text: systemText, cache_control: { type: 'ephemeral' } }]
+
+  // Refuerzo de idioma: detectamos el idioma del ÚLTIMO mensaje del cliente y añadimos una
+  // orden específica y fresca en un 2º bloque de system (sin cache_control, va justo antes de
+  // los mensajes → máxima relevancia). Una orden concreta ("responde en inglés") pega mucho
+  // más que la regla general enterrada en el prompt.
+  const lastUserMsg = [...history].reverse().find(m => m.role === 'user')
+  const lastText = lastUserMsg && typeof lastUserMsg.content === 'string' ? lastUserMsg.content : ''
+  let lang = detectLang(lastText)                                    // rápido (ES/EN)
+  if (!lang && lastText.trim().length > 1) lang = await detectLangAI(lastText)  // universal (cualquier idioma)
+  if (lang) {
+    system.push({ type: 'text', text: `⚠️ IDIOMA OBLIGATORIO DE ESTA RESPUESTA: el último mensaje del cliente está en ${lang}. Escribe tu respuesta ENTERA en ${lang}, sin ninguna excepción.` })
+  }
+
+  // ── Registro del ENTRANTE + puerta de PAUSA (solo modo live) ───────────────────────────
+  // Registramos el mensaje del cliente en el Lead (y capturamos su nombre si se presenta).
+  // Si el agente está en pausa en esta conversación (el manager la está llevando), el agente
+  // NO responde: se queda callado y el manager contesta a mano.
+  if (AGENT_MODE === 'live') {
+    let clientName = null
+    if (!capturedNames.has(phone) && lastText.trim().length > 1) {
+      clientName = await extractClientName(lastText)
+      if (clientName) capturedNames.add(phone)
+    }
+    const leadState = await logLeadMessage(phone, 'inbound', 'client', lastText, clientName)
+    if (leadState && leadState.agentPaused) {
+      console.log('[agent] Conversación en pausa → el agente calla (lo lleva el manager).')
+      return { reply: '', paused: true, toolCalls: [] }
+    }
+  }
+
+  const toolCalls = []
+  let reply = ''
+
+  // Bucle agéntico: si el modelo pide una herramienta, la ejecutamos y seguimos.
+  for (let step = 0; step < 6; step++) {
+    const resp = await client.messages.create({
+      model: MODEL,
+      max_tokens: 1024,
+      system,
+      tools: TOOLS,
+      messages: convo,
+    })
+
+    // Confirma en la terminal que el caché funciona:
+    //   cache_creation = tokens escritos al caché (1ª vez, ~1.25x)
+    //   cache_read     = tokens servidos del caché (siguientes, ~0.1x)  ← lo que queremos ver crecer
+    const u = resp.usage
+    console.log(`[caché] escritos:${u.cache_creation_input_tokens || 0} · leídos:${u.cache_read_input_tokens || 0} · sin cachear:${u.input_tokens}`)
+
+    // El modelo puede pedir VARIAS herramientas en un mismo turno (parallel tool use).
+    // Hay que ejecutarlas TODAS y devolver un tool_result por cada tool_use, o la API
+    // rechaza la siguiente llamada con un 400 ("tool_use sin su tool_result").
+    const toolUses = resp.content.filter(c => c.type === 'tool_use')
+    if (resp.stop_reason === 'tool_use' && toolUses.length) {
+      convo.push({ role: 'assistant', content: resp.content })
+      const results = []
+      for (const tu of toolUses) {
+        const result = await runTool(tu.name, tu.input, phone)
+        toolCalls.push({ name: tu.name, input: tu.input, result })
+        results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(result) })
+      }
+      convo.push({ role: 'user', content: results })
+      continue
+    }
+
+    reply = resp.content.filter(c => c.type === 'text').map(c => c.text).join('\n').trim()
+    break
+  }
+
+  // Registrar la respuesta del agente (saliente) en el Lead. El entrante ya se registró antes de
+  // generar (para la puerta de pausa). Fire-and-forget: no bloquea la respuesta al cliente.
+  if (AGENT_MODE === 'live' && reply) {
+    logLeadMessage(phone, 'outbound', 'agent', reply)
+      .catch(err => console.error('[lead] registro saliente falló:', err.message))
+  }
+
+  return { reply, toolCalls, paused: false }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Chat: la usa el playground en el navegador. Recibe el historial visible completo
+// (lo mantiene el propio navegador) y corre un turno del bucle agéntico.
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/chat', async (req, res) => {
   try {
     if (!process.env.ANTHROPIC_API_KEY) {
       return res.status(500).json({ error: 'Falta ANTHROPIC_API_KEY. Créala en el archivo .env (ver README).' })
     }
-
     const history = Array.isArray(req.body.messages) ? req.body.messages : []
     const phone = req.body.phone || DEMO_PHONE   // teléfono del perfil activo
-    const convo = history.map(m => ({ role: m.role, content: m.content }))
-    const systemText = SYSTEM_PROMPT.replace('{{TODAY}}', new Date().toISOString().slice(0, 10))
-    // El knowledge base no cambia entre mensajes → lo cacheamos (solo este bloque lleva
-    // cache_control). La primera llamada lo procesa entero; las siguientes lo cobran a ~1/10.
-    const system = [{ type: 'text', text: systemText, cache_control: { type: 'ephemeral' } }]
-
-    // Refuerzo de idioma: detectamos el idioma del ÚLTIMO mensaje del cliente y añadimos una
-    // orden específica y fresca en un 2º bloque de system (sin cache_control, va justo antes de
-    // los mensajes → máxima relevancia). Una orden concreta ("responde en inglés") pega mucho
-    // más que la regla general enterrada en el prompt.
-    const lastUserMsg = [...history].reverse().find(m => m.role === 'user')
-    const lastText = lastUserMsg && typeof lastUserMsg.content === 'string' ? lastUserMsg.content : ''
-    let lang = detectLang(lastText)                                    // rápido (ES/EN)
-    if (!lang && lastText.trim().length > 1) lang = await detectLangAI(lastText)  // universal (cualquier idioma)
-    if (lang) {
-      system.push({ type: 'text', text: `⚠️ IDIOMA OBLIGATORIO DE ESTA RESPUESTA: el último mensaje del cliente está en ${lang}. Escribe tu respuesta ENTERA en ${lang}, sin ninguna excepción.` })
-    }
-
-    // ── Registro del ENTRANTE + puerta de PAUSA (solo modo live) ───────────────────────────
-    // Registramos el mensaje del cliente en el Lead (y capturamos su nombre si se presenta).
-    // Si el agente está en pausa en esta conversación (el manager la está llevando), el agente
-    // NO responde: se queda callado y el manager contesta a mano.
-    if (AGENT_MODE === 'live') {
-      let clientName = null
-      if (!capturedNames.has(phone) && lastText.trim().length > 1) {
-        clientName = await extractClientName(lastText)
-        if (clientName) capturedNames.add(phone)
-      }
-      const leadState = await logLeadMessage(phone, 'inbound', 'client', lastText, clientName)
-      if (leadState && leadState.agentPaused) {
-        console.log('[agent] Conversación en pausa → el agente calla (lo lleva el manager).')
-        return res.json({ reply: '', paused: true, toolCalls: [] })
-      }
-    }
-
-    const toolCalls = []
-    let reply = ''
-
-    // Bucle agéntico: si el modelo pide una herramienta, la ejecutamos y seguimos.
-    for (let step = 0; step < 6; step++) {
-      const resp = await client.messages.create({
-        model: MODEL,
-        max_tokens: 1024,
-        system,
-        tools: TOOLS,
-        messages: convo,
-      })
-
-      // Confirma en la terminal que el caché funciona:
-      //   cache_creation = tokens escritos al caché (1ª vez, ~1.25x)
-      //   cache_read     = tokens servidos del caché (siguientes, ~0.1x)  ← lo que queremos ver crecer
-      const u = resp.usage
-      console.log(`[caché] escritos:${u.cache_creation_input_tokens || 0} · leídos:${u.cache_read_input_tokens || 0} · sin cachear:${u.input_tokens}`)
-
-      // El modelo puede pedir VARIAS herramientas en un mismo turno (parallel tool use).
-      // Hay que ejecutarlas TODAS y devolver un tool_result por cada tool_use, o la API
-      // rechaza la siguiente llamada con un 400 ("tool_use sin su tool_result").
-      const toolUses = resp.content.filter(c => c.type === 'tool_use')
-      if (resp.stop_reason === 'tool_use' && toolUses.length) {
-        convo.push({ role: 'assistant', content: resp.content })
-        const results = []
-        for (const tu of toolUses) {
-          const result = await runTool(tu.name, tu.input, phone)
-          toolCalls.push({ name: tu.name, input: tu.input, result })
-          results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(result) })
-        }
-        convo.push({ role: 'user', content: results })
-        continue
-      }
-
-      reply = resp.content.filter(c => c.type === 'text').map(c => c.text).join('\n').trim()
-      break
-    }
-
-    res.json({ reply, toolCalls })
-
-    // Registrar la respuesta del agente (saliente) en el Lead. El entrante ya se registró antes de
-    // generar (para la puerta de pausa). Fire-and-forget: no bloquea la respuesta al cliente.
-    if (AGENT_MODE === 'live' && reply) {
-      logLeadMessage(phone, 'outbound', 'agent', reply)
-        .catch(err => console.error('[lead] registro saliente falló:', err.message))
-    }
+    const { reply, toolCalls, paused } = await runAgentTurn(history, phone)
+    res.json({ reply, toolCalls, paused })
   } catch (err) {
     console.error('[agent] Error:', err.message)
     res.status(500).json({ error: err.message })
@@ -353,6 +369,65 @@ app.get('/lead-messages/:phone', async (req, res) => {
     res.json({ messages, agentPaused: !!lead.agentPaused })
   } catch (err) {
     res.json({ messages: [], agentPaused: false })
+  }
+})
+
+// Reconstruye el historial de una conversación real desde el CRM (única fuente de verdad,
+// no guardamos nada en memoria del propio agente): un mensaje inbound/outbound por línea,
+// convertido al formato {role, content} que espera Claude.
+async function fetchLeadHistory(phone) {
+  try {
+    const r = await fetch(`${BACKEND_URL}/api/leads/by-phone/${encodeURIComponent(phone)}`, {
+      headers: { 'X-Agent-Secret': AGENT_SECRET },
+    })
+    if (!r.ok) return []
+    const lead = await r.json()
+    return (lead.messages || [])
+      .filter(m => m.content)
+      .sort((a, b) => new Date(a.sentAt) - new Date(b.sentAt))
+      .map(m => ({ role: m.direction === 'inbound' ? 'user' : 'assistant', content: m.content }))
+  } catch (err) {
+    console.error('[whatsapp] no se pudo cargar el historial del lead:', err.message)
+    return []
+  }
+}
+
+// Webhook de WhatsApp: Twilio llama aquí cada vez que un cliente escribe de verdad.
+// Solo activo en modo live (en simulado no tiene sentido, no hay CRM real al que apuntar).
+app.post('/webhook/whatsapp', express.urlencoded({ extended: false }), async (req, res) => {
+  // Verificamos que la petición viene realmente de Twilio (firma con nuestro Auth Token),
+  // para que nadie pueda simular mensajes de clientes y disparar reservas falsas.
+  const signature = req.headers['x-twilio-signature']
+  const url = `https://${req.get('host')}${req.originalUrl}`
+  const validSignature = TWILIO_AUTH_TOKEN && twilio.validateRequest(TWILIO_AUTH_TOKEN, signature, url, req.body)
+  if (!validSignature) {
+    console.warn('[whatsapp] Firma de Twilio inválida — petición rechazada.')
+    return res.status(403).send('Firma inválida')
+  }
+
+  // Respondemos YA a Twilio con un TwiML vacío (si tardamos, Twilio reintenta el webhook).
+  // El envío real de la respuesta va aparte, por la API de Twilio, cuando el agente termine.
+  res.status(200).type('text/xml').send('<Response></Response>')
+
+  if (AGENT_MODE !== 'live' || !twilioClient) return
+  const from = req.body.From    // 'whatsapp:+34...'
+  const body = (req.body.Body || '').trim()
+  if (!from || !body) return
+  const phone = from.replace('whatsapp:', '')
+
+  try {
+    const history = await fetchLeadHistory(phone)
+    history.push({ role: 'user', content: body })
+    const { reply, paused } = await runAgentTurn(history, phone)
+    if (reply && !paused) {
+      await twilioClient.messages.create({
+        from: `whatsapp:${TWILIO_WHATSAPP_NUMBER}`,
+        to: from,
+        body: reply,
+      })
+    }
+  } catch (err) {
+    console.error('[whatsapp] Error procesando mensaje entrante:', err.message)
   }
 })
 
