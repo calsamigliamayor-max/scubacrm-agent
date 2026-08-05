@@ -15,6 +15,9 @@ const AGENT_MODE    = process.env.AGENT_MODE || 'simulated'
 const BACKEND_URL   = process.env.BACKEND_URL || 'https://scubacrm-backend-production.up.railway.app'
 const DEMO_PHONE    = process.env.DEMO_PHONE || '+34600000000'
 const AGENT_SECRET  = process.env.AGENT_SECRET || ''
+// Tope de vueltas del bucle agéntico. Configurable sobre todo para poder forzar el
+// camino de fallo de forma determinista al probar (AGENT_MAX_STEPS=0).
+const AGENT_MAX_STEPS = Number(process.env.AGENT_MAX_STEPS ?? 6)
 
 // ─── Twilio (WhatsApp real) ─────────────────────────────────────────────────
 const TWILIO_ACCOUNT_SID     = process.env.TWILIO_ACCOUNT_SID || ''
@@ -109,6 +112,28 @@ async function logLeadMessage(phone, direction, author, content, clientName) {
     console.error('[lead] registro de mensaje falló:', err.message)
     return null
   }
+}
+
+// Avisa al CRM de que el agente NO ha podido responder a este cliente, para que la
+// conversación salte en rojo en el módulo Leads y el manager tome el relevo.
+// Fire-and-forget: si esto falla, no debe tumbar la respuesta al cliente.
+async function reportAgentFailure(phone, reason) {
+  if (AGENT_MODE !== 'live') return
+  try {
+    await postJSON(`${BACKEND_URL}/api/leads/agent-failure`, { clientPhone: phone, reason })
+    console.log(`[agent] ⚠️  Fallo reportado al CRM (${reason}) para ${phone}`)
+  } catch (err) {
+    console.error('[agent] No se pudo reportar el fallo al CRM:', err.message)
+  }
+}
+
+// Mensaje que recibe el cliente cuando el agente no ha sido capaz de responder: mejor
+// esto que el silencio absoluto. Sin llamadas a la API — es el camino de fallo, tiene
+// que funcionar siempre. `lang` viene de la detección de idioma que ya se hace arriba.
+function bridgeMessage(lang) {
+  return lang === 'español'
+    ? 'Dame un momento, lo consulto con el equipo y te contesto enseguida 🙏'
+    : 'Give me a moment, let me check this with the team and I\'ll get right back to you 🙏'
 }
 
 async function postJSON(url, body) {
@@ -236,41 +261,100 @@ async function runAgentTurn(history, phone) {
 
   const toolCalls = []
   let reply = ''
+  let failReason = null
 
-  // Bucle agéntico: si el modelo pide una herramienta, la ejecutamos y seguimos.
-  for (let step = 0; step < 6; step++) {
-    const resp = await client.messages.create({
-      model: MODEL,
-      max_tokens: 1024,
-      system,
-      tools: TOOLS,
-      messages: convo,
-    })
+  // Reservas ya creadas en ESTE turno. El knowledge base es explícito ("UNA SOLA llamada
+  // a create_booking"), pero el 31/07 el modelo la llamó dos veces, creó dos reservas
+  // reales y se quedó dando vueltas intentando reconciliarlo hasta agotar el bucle
+  // (quedándose mudo). Esta guarda corta las dos cosas de raíz.
+  let bookingCreated = null
 
-    // Confirma en la terminal que el caché funciona:
-    //   cache_creation = tokens escritos al caché (1ª vez, ~1.25x)
-    //   cache_read     = tokens servidos del caché (siguientes, ~0.1x)  ← lo que queremos ver crecer
-    const u = resp.usage
-    console.log(`[caché] escritos:${u.cache_creation_input_tokens || 0} · leídos:${u.cache_read_input_tokens || 0} · sin cachear:${u.input_tokens}`)
+  try {
+    // Bucle agéntico: si el modelo pide una herramienta, la ejecutamos y seguimos.
+    for (let step = 0; step < AGENT_MAX_STEPS; step++) {
+      const resp = await client.messages.create({
+        model: MODEL,
+        max_tokens: 1024,
+        system,
+        tools: TOOLS,
+        messages: convo,
+      })
 
-    // El modelo puede pedir VARIAS herramientas en un mismo turno (parallel tool use).
-    // Hay que ejecutarlas TODAS y devolver un tool_result por cada tool_use, o la API
-    // rechaza la siguiente llamada con un 400 ("tool_use sin su tool_result").
-    const toolUses = resp.content.filter(c => c.type === 'tool_use')
-    if (resp.stop_reason === 'tool_use' && toolUses.length) {
-      convo.push({ role: 'assistant', content: resp.content })
-      const results = []
-      for (const tu of toolUses) {
-        const result = await runTool(tu.name, tu.input, phone)
-        toolCalls.push({ name: tu.name, input: tu.input, result })
-        results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(result) })
+      // Confirma en la terminal que el caché funciona:
+      //   cache_creation = tokens escritos al caché (1ª vez, ~1.25x)
+      //   cache_read     = tokens servidos del caché (siguientes, ~0.1x)  ← lo que queremos ver crecer
+      const u = resp.usage
+      console.log(`[caché] escritos:${u.cache_creation_input_tokens || 0} · leídos:${u.cache_read_input_tokens || 0} · sin cachear:${u.input_tokens}`)
+
+      // El modelo puede pedir VARIAS herramientas en un mismo turno (parallel tool use).
+      // Hay que ejecutarlas TODAS y devolver un tool_result por cada tool_use, o la API
+      // rechaza la siguiente llamada con un 400 ("tool_use sin su tool_result").
+      const toolUses = resp.content.filter(c => c.type === 'tool_use')
+      if (resp.stop_reason === 'tool_use' && toolUses.length) {
+        convo.push({ role: 'assistant', content: resp.content })
+        const results = []
+        for (const tu of toolUses) {
+          let result
+          if (tu.name === 'create_booking' && bookingCreated) {
+            // Segunda llamada a create_booking en el mismo turno → NO se ejecuta.
+            // Le devolvemos la reserva que ya existe y una instrucción clara de cerrar.
+            result = {
+              ...bookingCreated,
+              ok: true,
+              alreadyCreated: true,
+              warning: 'Ya has creado la reserva de este cliente en este mismo turno. NO crees otra. Responde ya al cliente confirmándole la reserva existente con su resumen.',
+            }
+            console.warn('[agent] ⚠️  create_booking duplicado bloqueado (ya había una reserva en este turno).')
+          } else {
+            result = await runTool(tu.name, tu.input, phone)
+            if (tu.name === 'create_booking' && result && result.ok !== false) bookingCreated = result
+          }
+          toolCalls.push({ name: tu.name, input: tu.input, result })
+          results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(result) })
+        }
+        convo.push({ role: 'user', content: results })
+        continue
       }
-      convo.push({ role: 'user', content: results })
-      continue
+
+      reply = resp.content.filter(c => c.type === 'text').map(c => c.text).join('\n').trim()
+      break
     }
 
-    reply = resp.content.filter(c => c.type === 'text').map(c => c.text).join('\n').trim()
-    break
+    // ── Rescate ────────────────────────────────────────────────────────────────────
+    // Si salimos del bucle sin texto, el modelo se quedó pidiendo herramientas sin cerrar
+    // nunca. Una última llamada con tool_choice 'none' le obliga a contestar con texto.
+    // OJO: hay que seguir pasando `tools`, porque el historial ya contiene bloques
+    // tool_use y la API devuelve 400 si no están declaradas.
+    if (!reply) {
+      console.warn('[agent] Bucle agotado sin respuesta → intentando pasada de rescate…')
+      const rescue = await client.messages.create({
+        model: MODEL,
+        max_tokens: 1024,
+        system: [...system, { type: 'text', text: 'CIERRA AHORA: responde al cliente con un mensaje de texto, sin usar ninguna herramienta. Si ya has registrado su reserva, confírmasela con el resumen. Si te falta algo, pregúntaselo con naturalidad.' }],
+        tools: TOOLS,
+        tool_choice: { type: 'none' },
+        messages: convo,
+      })
+      reply = rescue.content.filter(c => c.type === 'text').map(c => c.text).join('\n').trim()
+      if (reply) console.log('[agent] ✅ Rescate conseguido: el agente sí ha respondido.')
+    }
+  } catch (err) {
+    // Antes esto se propagaba: en el webhook de WhatsApp acababa en un log y el cliente
+    // no recibía absolutamente nada.
+    console.error('[agent] Error en el bucle agéntico:', err.message)
+    failReason = 'error'
+  }
+
+  // ── Red de seguridad ───────────────────────────────────────────────────────────
+  // Ni el bucle ni el rescate han producido respuesta. En vez de dejar al cliente en
+  // silencio (el bug del 31/07), le mandamos un mensaje puente y avisamos al manager.
+  if (!reply) {
+    failReason = failReason || 'loop_exhausted'
+    reply = bridgeMessage(lang)
+    console.warn(`[agent] ⚠️  Sin respuesta (${failReason}) → mensaje puente al cliente + alerta al manager.`)
+  }
+  if (failReason) {
+    reportAgentFailure(phone, failReason).catch(() => {})
   }
 
   // Registrar la respuesta del agente (saliente) en el Lead. El entrante ya se registró antes de
@@ -280,7 +364,7 @@ async function runAgentTurn(history, phone) {
       .catch(err => console.error('[lead] registro saliente falló:', err.message))
   }
 
-  return { reply, toolCalls, paused: false }
+  return { reply, toolCalls, paused: false, failReason }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
