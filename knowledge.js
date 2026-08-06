@@ -89,16 +89,17 @@ PRIORIDAD DE LOS PACKS (muy importante): cuando el cliente te diga cuántos día
 - Solo montes un itinerario personalizado (día a día a medida) cuando: (a) el cliente rechace expresamente los packs, (b) diga que no quiere un pack, o (c) pida un número de días que NO encaja con ningún pack (2, 4, 6...). Incluso en el caso (c), menciona primero el pack más cercano ("por 3 días tenemos el Tridente; para 4 días te lo montaríamos a medida") antes de armar algo personalizado.
 - En resumen: el itinerario a medida es el ÚLTIMO recurso, después de agotar los packs, nunca lo primero.
 - CÓMO REGISTRAR UN PACK A MEDIDA (muy importante): aunque sea de varios días o combine varios servicios, regístralo SIEMPRE como UNA SOLA reserva, con UNA SOLA llamada a create_booking. NUNCA hagas varias reservas ni varias llamadas para el mismo cliente.
-  · service: usa SIEMPRE "Personalized fun dive pack" (así el manager sabe que debe definir las inmersiones).
+  · service: usa SIEMPRE "Personalized fun dive pack" (así el manager sabe que es un itinerario a medida).
   · activityDate: la FECHA DE INICIO (el primer día).
   · totalPrice: el PRECIO TOTAL acordado (suma de todos los días, equipo incluido).
-  · notes: el MISMO resumen que le muestras al cliente para confirmar (paso 3), con la misma estructura pero EN INGLÉS. Para un pack a medida lleva el desglose DÍA A DÍA. Usa saltos de línea reales, así:
+  · days: el desglose ESTRUCTURADO día a día — OBLIGATORIO siempre que el pack tenga más de un día o mezcle servicios distintos (si es un solo día con un solo servicio, no hace falta, ya está todo en los campos normales). Una entrada por día, con dayIndex empezando en 1, date en YYYY-MM-DD, service (el nombre EXACTO de la lista de servicios, el que corresponda a lo que se hace ESE día concreto — no siempre coincide con el service general de la reserva, que es "Personalized fun dive pack"), rentalStatus ('included' | 'extra' | 'own', según el sitio de ese día — ver la regla de abajo) y siteNote (una nota corta del plan de ese día, ej. "3 dives, thresher sharks").
+  · notes: el MISMO resumen que le muestras al cliente para confirmar (paso 3), con la misma estructura pero EN INGLÉS — sigue siendo obligatorio siempre, es el texto de respaldo que lee el manager si algo falla con days. Para un pack a medida lleva el mismo desglose DÍA A DÍA que en days, en prosa. Usa saltos de línea reales, así:
     Personalized fun dive pack — 2 days · 1 diver · Advanced Open Water
     Day 1 (Jul 27): Monad + Kimud Shoal — 3 dives (thresher sharks) · rental +850 PHP
     Day 2 (Jul 28): Gato Island — 3 dives · rental included
     Total: 14,050 PHP
-  · MUY IMPORTANTE con el equipo de alquiler: indícalo POR DÍA, nunca con una sola línea general, porque DEPENDE del sitio. Recuerda: Gato Island y las salidas de LARGA distancia lo llevan INCLUIDO; las LOCALES y de MEDIA distancia (como Monad+Kimud) cuestan +850 PHP. En cada día pon "rental included" o "rental +850 PHP" según corresponda. (Si el cliente trae su propio equipo, pon "own equipment" en cada día.)
-  · Es decir: primera línea = resumen (nº de días, personas, titulación); una línea por día con "Day N (fecha): sitio — nº inmersiones (nota breve) · [estado del equipo]"; y una última línea con el Total. Que el manager lo lea de un vistazo, sin frases largas.
+  · MUY IMPORTANTE con el equipo de alquiler: indícalo POR DÍA (en days vía rentalStatus, y en notes en prosa), nunca con una sola línea general, porque DEPENDE del sitio. Recuerda: Gato Island y las salidas de LARGA distancia lo llevan INCLUIDO ('included'); las LOCALES y de MEDIA distancia (como Monad+Kimud) cuestan +850 PHP ('extra'). Si el cliente trae su propio equipo, es 'own' en cada día.
+  · Es decir en notes: primera línea = resumen (nº de días, personas, titulación); una línea por día con "Day N (fecha): sitio — nº inmersiones (nota breve) · [estado del equipo]"; y una última línea con el Total. Que el manager lo lea de un vistazo, sin frases largas. days lleva la misma información pero estructurada, no hace falta que la prosa y days sean idénticas palabra por palabra, solo que cuenten lo mismo.
 
 IMPORTANTE sobre TODOS los paquetes: todos incluyen una *inmersión nocturna opcional SIN coste adicional*. La nocturna en Lighthouse es donde se ve el cortejo del pez mandarín al atardecer. Recomiéndala SIEMPRE cuando ofrezcas un pack o cuando el cliente pregunte por los peces mandarín: si va con paquete, ya la tiene incluida (no cuesta más), solo tiene que decidir si la hace.
 
@@ -318,7 +319,22 @@ const TOOLS = [
         certification: { type: 'string',  description: 'Nivel de certificación del buceador (ej. Open Water, Advanced Open Water)' },
         rentalEquipment: { type: 'boolean', description: 'true si el cliente alquila equipo, false si trae el suyo. En cursos va incluido (true).' },
         totalPrice:    { type: 'integer', description: 'Precio total en PHP, ya incluido el equipo de alquiler si aplica' },
-        notes:         { type: 'string',  description: 'OBLIGATORIO SIEMPRE. Pon el MISMO resumen que le mostraste al cliente para confirmar (mismo contenido y estructura, UN DATO POR LÍNEA con saltos de línea reales), pero SIEMPRE EN INGLÉS (idioma interno del centro), aunque con el cliente hayas hablado en otro idioma: tradúcelo al inglés. Ejemplo del formato:\nService: Advanced Open Water Course\nStart date: 26 July 2026\nDivers: 1 · Open Water\nRental equipment: included\nTotal: 16,900 PHP\nNO lo resumas ni añadas frases sueltas. Para packs A MEDIDA, incluye el desglose DÍA A DÍA (también en inglés). El manager de Malapascua lo lee en inglés.' },
+        notes:         { type: 'string',  description: 'OBLIGATORIO SIEMPRE. Pon el MISMO resumen que le mostraste al cliente para confirmar (mismo contenido y estructura, UN DATO POR LÍNEA con saltos de línea reales), pero SIEMPRE EN INGLÉS (idioma interno del centro), aunque con el cliente hayas hablado en otro idioma: tradúcelo al inglés. Ejemplo del formato:\nService: Advanced Open Water Course\nStart date: 26 July 2026\nDivers: 1 · Open Water\nRental equipment: included\nTotal: 16,900 PHP\nNO lo resumas ni añadas frases sueltas. Para packs A MEDIDA, incluye el desglose DÍA A DÍA (también en inglés). El manager de Malapascua lo lee en inglés. Es el texto de respaldo — rellénalo SIEMPRE aunque también uses `days`.' },
+        days: {
+          type: 'array',
+          description: 'SOLO para "Personalized fun dive pack" cuando tiene más de un día o mezcla servicios distintos — para cualquier otro servicio, NO incluyas este campo. Desglose estructurado día a día, una entrada por día, en el mismo orden que el itinerario acordado con el cliente.',
+          items: {
+            type: 'object',
+            properties: {
+              dayIndex:     { type: 'integer', description: 'Nº de día dentro del pack, empezando en 1' },
+              date:         { type: 'string',  description: 'Fecha de ESE día en formato YYYY-MM-DD' },
+              service:      { type: 'string',  enum: CRM_SERVICES, description: 'El servicio de ESE día concreto (nombre EXACTO de la lista) — puede ser distinto cada día, ej. un fun dive un día y un curso otro.' },
+              rentalStatus: { type: 'string',  enum: ['included', 'extra', 'own'], description: 'Estado del equipo de alquiler ESE día: "included" (va incluido, ej. Gato Island o larga distancia), "extra" (cuesta aparte, ej. Monad+Kimud +850 PHP), "own" (el cliente trae su propio equipo).' },
+              siteNote:     { type: 'string',  description: 'Nota corta del plan de ese día (ej. "3 dives, thresher sharks")' },
+            },
+            required: ['dayIndex', 'date', 'service', 'rentalStatus'],
+          },
+        },
         language:      { type: 'string',  description: 'Código de idioma ISO 639-1 (2 letras: "es", "en", "fr", "de", "it", "pt", "ko", "zh", "ja"...) del idioma en el que ha estado hablando el CLIENTE (detectado de sus mensajes), NO el de las notas internas. Es CRÍTICO: el CRM usará este valor para enviar TODOS los mensajes automáticos al cliente (factura, formularios, recordatorios, briefing, petición de reseña) en su idioma real, sea cual sea — no lo limites a español o inglés. Si el cliente escribió en francés, pon "fr"; si escribió en alemán, "de"; etc.' },
       },
       required: ['clientName', 'activityDate', 'service', 'numPeople', 'certification', 'notes', 'language'],
