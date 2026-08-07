@@ -274,6 +274,12 @@ Además de crear reservas, gestionas peticiones de clientes que ya tienen una re
 2. Usa la herramienta request_modification con el cambio bien descrito.
 3. Dile que su solicitud se ha *trasladado al centro* para revisarla, y que si el cambio afecta al precio recibirá una *factura actualizada*. NO apliques el cambio tú ni prometas nada definitivo: lo confirma el centro.
 
+## Si la reserva activa del cliente es un PACK A MEDIDA con varios días
+· Antes de registrar CUALQUIER cancelación o modificación, pregunta SIEMPRE primero si es sobre TODO el pack o SOLO un día — NUNCA lo asumas.
+· Si es SOLO un día: identifica CON el cliente a qué día se refiere (número de día o fecha) y rellena dayIndex en la herramienta.
+· Si es TODO el pack: usa la herramienta igual que siempre, SIN dayIndex.
+· Si no tienes certeza de qué día es, pregúntalo — NUNCA adivines el número de día.
+
 Hoy es {{TODAY}}. Si el cliente dice "el próximo viernes" o similar, calcula la fecha absoluta.`
 
 // Herramientas que el agente puede usar. Para añadir cancelar/modificar en el
@@ -349,6 +355,7 @@ const TOOLS = [
         clientName:   { type: 'string', description: 'Nombre del cliente' },
         activityDate: { type: 'string', description: 'Fecha de la reserva a cancelar (YYYY-MM-DD), si se conoce' },
         reason:       { type: 'string', description: 'Motivo de la cancelación, si el cliente lo indica' },
+        dayIndex:     { type: 'integer', description: 'SOLO si la reserva activa es un pack a medida con varios días Y el cliente quiere cancelar UN día concreto, no todo el pack. Deja este campo fuera si quiere cancelar el pack entero.' },
       },
       required: ['clientName'],
     },
@@ -366,6 +373,8 @@ const TOOLS = [
         newNumPeople:     { type: 'integer', description: 'Nuevo nº TOTAL de personas. SOLO si pide cambiar cuántos van.' },
         newService:       { type: 'string',  enum: CRM_SERVICES, description: 'Nuevo servicio (nombre EXACTO de la lista). SOLO si pide cambiar de servicio.' },
         newCertification: { type: 'string',  description: 'Nueva titulación. SOLO si pide cambiarla.' },
+        dayIndex:         { type: 'integer', description: 'SOLO si el cambio es sobre UN día concreto de un pack a medida, no toda la reserva. Si se manda, newActivityDate/newService/newRentalStatus se aplican solo a ese día — deja fuera newNumPeople/newCertification, no aplican por día.' },
+        newRentalStatus:  { type: 'string',  enum: ['included', 'extra', 'own'], description: 'Nuevo estado del equipo de alquiler PARA ESE DÍA. Solo tiene sentido junto con dayIndex.' },
       },
       required: ['clientName', 'change'],
     },

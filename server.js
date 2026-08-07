@@ -184,6 +184,11 @@ async function runTool(name, input, phone) {
       if (name === 'request_cancellation') {
         const { status, data } = await postJSON(`${BACKEND_URL}/api/webhook/booking/cancel`, {
           clientName: input.clientName, clientPhone,
+          activityDate: input.activityDate || null,
+          reason: input.reason || null,
+          // dayIndex: SOLO si el cliente pide cancelar un día concreto de un pack a
+          // medida, no todo el pack — ver resolveTargetDay en el backend.
+          dayIndex: (input.dayIndex !== undefined && input.dayIndex !== null) ? input.dayIndex : null,
         })
         console.log('[tool·live] request_cancellation →', status, data)
         return { ok: status < 300, live: true, backendStatus: status, ...data, ...input }
@@ -195,6 +200,8 @@ async function runTool(name, input, phone) {
           newNumPeople: (input.newNumPeople !== undefined && input.newNumPeople !== null) ? input.newNumPeople : null,
           newService: input.newService ? normalizeService(input.newService) : null,
           newCertification: input.newCertification || null,
+          newRentalStatus: input.newRentalStatus || null,
+          dayIndex: (input.dayIndex !== undefined && input.dayIndex !== null) ? input.dayIndex : null,
         })
         console.log('[tool·live] request_modification →', status, data)
         return { ok: status < 300, live: true, backendStatus: status, ...data, ...input }
