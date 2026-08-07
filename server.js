@@ -186,9 +186,6 @@ async function runTool(name, input, phone) {
           clientName: input.clientName, clientPhone,
           activityDate: input.activityDate || null,
           reason: input.reason || null,
-          // dayIndex: SOLO si el cliente pide cancelar un día concreto de un pack a
-          // medida, no todo el pack — ver resolveTargetDay en el backend.
-          dayIndex: (input.dayIndex !== undefined && input.dayIndex !== null) ? input.dayIndex : null,
         })
         console.log('[tool·live] request_cancellation →', status, data)
         return { ok: status < 300, live: true, backendStatus: status, ...data, ...input }
@@ -202,6 +199,11 @@ async function runTool(name, input, phone) {
           newCertification: input.newCertification || null,
           newRentalStatus: input.newRentalStatus || null,
           dayIndex: (input.dayIndex !== undefined && input.dayIndex !== null) ? input.dayIndex : null,
+          // Quitar un día entero del pack (el resto sigue en pie) — equivalente por días
+          // de dar de baja a un buceador. `removeDayDate` es el seguro contra quitar el
+          // día equivocado: el backend rechaza la petición si no cuadra con el índice.
+          removeDayIndex: (input.removeDayIndex !== undefined && input.removeDayIndex !== null) ? input.removeDayIndex : null,
+          removeDayDate: input.removeDayDate || null,
         })
         console.log('[tool·live] request_modification →', status, data)
         return { ok: status < 300, live: true, backendStatus: status, ...data, ...input }

@@ -274,11 +274,14 @@ Además de crear reservas, gestionas peticiones de clientes que ya tienen una re
 2. Usa la herramienta request_modification con el cambio bien descrito.
 3. Dile que su solicitud se ha *trasladado al centro* para revisarla, y que si el cambio afecta al precio recibirá una *factura actualizada*. NO apliques el cambio tú ni prometas nada definitivo: lo confirma el centro.
 
-## Si la reserva activa del cliente es un PACK A MEDIDA con varios días
-· Antes de registrar CUALQUIER cancelación o modificación, pregunta SIEMPRE primero si es sobre TODO el pack o SOLO un día — NUNCA lo asumas.
-· Si es SOLO un día: identifica CON el cliente a qué día se refiere (número de día o fecha) y rellena dayIndex en la herramienta.
-· Si es TODO el pack: usa la herramienta igual que siempre, SIN dayIndex.
-· Si no tienes certeza de qué día es, pregúntalo — NUNCA adivines el número de día.
+## Si la reserva del cliente es un PACK A MEDIDA de varios días
+Igual que dar de baja a un buceador concreto es una modificación (no una cancelación), quitar un día concreto también lo es: la reserva sigue viva, solo cambia de forma. Todo esto va por request_modification:
+· Pregunta SIEMPRE si su petición es sobre TODO el pack o SOLO un día concreto — nunca lo asumas.
+· *Quitar un día y mantener el resto* → request_modification con removeDayIndex + removeDayDate.
+· *Cambiar algo de un día, manteniéndolo* (fecha, servicio o equipo de ESE día) → request_modification con dayIndex.
+· *Cambiar el pack entero* → request_modification como siempre, sin ninguno de esos campos.
+· Solo usa request_cancellation si quiere cancelar la reserva ENTERA, todos los días.
+· Si no sabes con certeza de qué día habla, pregúntaselo antes de llamar a ninguna herramienta — nunca adivines el número ni la fecha.
 
 Hoy es {{TODAY}}. Si el cliente dice "el próximo viernes" o similar, calcula la fecha absoluta.`
 
@@ -348,21 +351,20 @@ const TOOLS = [
   },
   {
     name: 'request_cancellation',
-    description: 'Registra una PETICIÓN de cancelación de la reserva del cliente para que el centro la revise. Úsala cuando el cliente exprese claramente que quiere cancelar. No cancela nada de forma definitiva: lo revisa el centro.',
+    description: 'Registra una PETICIÓN de cancelación de la RESERVA ENTERA para que el centro la revise. Úsala cuando el cliente quiera cancelar toda su reserva. Si tiene un pack a medida de varios días y solo quiere quitar UNO de esos días manteniendo el resto, NO es esta herramienta: es request_day_cancellation. No cancela nada de forma definitiva: lo revisa el centro.',
     input_schema: {
       type: 'object',
       properties: {
         clientName:   { type: 'string', description: 'Nombre del cliente' },
         activityDate: { type: 'string', description: 'Fecha de la reserva a cancelar (YYYY-MM-DD), si se conoce' },
         reason:       { type: 'string', description: 'Motivo de la cancelación, si el cliente lo indica' },
-        dayIndex:     { type: 'integer', description: 'SOLO si la reserva activa es un pack a medida con varios días Y el cliente quiere cancelar UN día concreto, no todo el pack. Deja este campo fuera si quiere cancelar el pack entero.' },
       },
       required: ['clientName'],
     },
   },
   {
     name: 'request_modification',
-    description: 'Registra una PETICIÓN de modificación de la reserva del cliente para que el centro la revise (ej. añadir/quitar personas, cambiar fecha o servicio). Úsala cuando el cliente quiera cambiar algo de una reserva existente. No aplica el cambio: lo revisa el centro.',
+    description: 'Registra una PETICIÓN de modificación de la reserva del cliente para que el centro la revise (ej. añadir/quitar personas, quitar un día de un pack a medida, cambiar fecha o servicio). Úsala cuando el cliente quiera cambiar algo de una reserva existente. No aplica el cambio: lo revisa el centro.',
     input_schema: {
       type: 'object',
       properties: {
@@ -375,6 +377,9 @@ const TOOLS = [
         newCertification: { type: 'string',  description: 'Nueva titulación. SOLO si pide cambiarla.' },
         dayIndex:         { type: 'integer', description: 'SOLO si el cambio es sobre UN día concreto de un pack a medida, no toda la reserva. Si se manda, newActivityDate/newService/newRentalStatus se aplican solo a ese día — deja fuera newNumPeople/newCertification, no aplican por día.' },
         newRentalStatus:  { type: 'string',  enum: ['included', 'extra', 'own'], description: 'Nuevo estado del equipo de alquiler PARA ESE DÍA. Solo tiene sentido junto con dayIndex.' },
+        // Quitar un día entero del pack — el equivalente por días de dar de baja a un buceador.
+        removeDayIndex:   { type: 'integer', description: 'Nº del día del pack que el cliente quiere QUITAR del itinerario, manteniendo los demás (el primer día del pack es el 1). Úsalo para "cancela el día 2, los otros los mantengo". La reserva NO se cancela: solo se cae ese día. Si no sabes con certeza qué día es, PREGÚNTASELO al cliente — nunca lo adivines.' },
+        removeDayDate:    { type: 'string',  description: 'Fecha (YYYY-MM-DD) del día que se quiere quitar. OBLIGATORIO junto con removeDayIndex: el centro comprueba que ambos cuadren para no dar de baja el día equivocado.' },
       },
       required: ['clientName', 'change'],
     },
