@@ -19,6 +19,13 @@ const AGENT_SECRET  = process.env.AGENT_SECRET || ''
 // camino de fallo de forma determinista al probar (AGENT_MAX_STEPS=0).
 const AGENT_MAX_STEPS = Number(process.env.AGENT_MAX_STEPS ?? 6)
 
+// Techo de tokens que el modelo puede ESCRIBIR por respuesta (incluye su razonamiento
+// interno, aunque el cliente no lo vea). Holgado a propósito: el resumen de confirmación
+// de un pack a medida necesita ~1.700 y con 1024 se cortaba a media frase (incidente del
+// 07/08). Subirlo no encarece nada: se paga por lo escrito, no por lo permitido.
+// Configurable para poder forzar el corte al probar (AGENT_MAX_TOKENS=200).
+const AGENT_MAX_TOKENS = Number(process.env.AGENT_MAX_TOKENS ?? 8192)
+
 // ─── Twilio (WhatsApp real) ─────────────────────────────────────────────────
 const TWILIO_ACCOUNT_SID     = process.env.TWILIO_ACCOUNT_SID || ''
 const TWILIO_AUTH_TOKEN      = process.env.TWILIO_AUTH_TOKEN || ''
@@ -275,6 +282,11 @@ async function runAgentTurn(history, phone) {
   const toolCalls = []
   let reply = ''
   let failReason = null
+  // Motivo de fallo detectado dentro del bucle que NO debe disparar alerta por sí solo:
+  // si la pasada de rescate consigue responder, el cliente queda bien atendido y no hay
+  // nada que avisar. Solo se usa si al final tampoco hay respuesta, para que la alerta
+  // diga el motivo real en vez de un genérico "bucle agotado".
+  let softFailReason = null
 
   // Reservas ya creadas en ESTE turno. El knowledge base es explícito ("UNA SOLA llamada
   // a create_booking"), pero el 31/07 el modelo la llamó dos veces, creó dos reservas
@@ -287,7 +299,7 @@ async function runAgentTurn(history, phone) {
     for (let step = 0; step < AGENT_MAX_STEPS; step++) {
       const resp = await client.messages.create({
         model: MODEL,
-        max_tokens: 1024,
+        max_tokens: AGENT_MAX_TOKENS,
         system,
         tools: TOOLS,
         messages: convo,
@@ -298,6 +310,19 @@ async function runAgentTurn(history, phone) {
       //   cache_read     = tokens servidos del caché (siguientes, ~0.1x)  ← lo que queremos ver crecer
       const u = resp.usage
       console.log(`[caché] escritos:${u.cache_creation_input_tokens || 0} · leídos:${u.cache_read_input_tokens || 0} · sin cachear:${u.input_tokens}`)
+
+      // El modelo se ha quedado sin presupuesto de tokens a media respuesta (incidente real
+      // del 07/08: al cliente le llegó un "¡" suelto). Un turno cortado NO sirve para nada:
+      // el texto está a medias y cualquier herramienta que trajera está a medio escribir —
+      // ejecutarla podría crear una reserva con datos incompletos. Se descarta el turno
+      // entero y se deja que la pasada de rescate cierre la conversación.
+      // OJO: el razonamiento interno del modelo también consume de este presupuesto,
+      // así que puede agotarse aunque el mensaje visible sea corto.
+      if (resp.stop_reason === 'max_tokens') {
+        console.warn(`[agent] ⚠️  Respuesta cortada por max_tokens (${u.output_tokens} tokens escritos) → turno descartado.`)
+        softFailReason = 'max_tokens'
+        break
+      }
 
       // El modelo puede pedir VARIAS herramientas en un mismo turno (parallel tool use).
       // Hay que ejecutarlas TODAS y devolver un tool_result por cada tool_use, o la API
@@ -342,14 +367,21 @@ async function runAgentTurn(history, phone) {
       console.warn('[agent] Bucle agotado sin respuesta → intentando pasada de rescate…')
       const rescue = await client.messages.create({
         model: MODEL,
-        max_tokens: 1024,
+        max_tokens: AGENT_MAX_TOKENS,
         system: [...system, { type: 'text', text: 'CIERRA AHORA: responde al cliente con un mensaje de texto, sin usar ninguna herramienta. Si ya has registrado su reserva, confírmasela con el resumen. Si te falta algo, pregúntaselo con naturalidad.' }],
         tools: TOOLS,
         tool_choice: { type: 'none' },
         messages: convo,
       })
-      reply = rescue.content.filter(c => c.type === 'text').map(c => c.text).join('\n').trim()
-      if (reply) console.log('[agent] ✅ Rescate conseguido: el agente sí ha respondido.')
+      // Si hasta el rescate se corta, se descarta también: antes un mensaje a medias que
+      // un mensaje a medias mandado al cliente. Cae al mensaje puente de abajo.
+      if (rescue.stop_reason === 'max_tokens') {
+        console.warn('[agent] ⚠️  El rescate también se cortó por max_tokens → mensaje puente.')
+        softFailReason = 'max_tokens'
+      } else {
+        reply = rescue.content.filter(c => c.type === 'text').map(c => c.text).join('\n').trim()
+        if (reply) console.log('[agent] ✅ Rescate conseguido: el agente sí ha respondido.')
+      }
     }
   } catch (err) {
     // Antes esto se propagaba: en el webhook de WhatsApp acababa en un log y el cliente
@@ -362,7 +394,7 @@ async function runAgentTurn(history, phone) {
   // Ni el bucle ni el rescate han producido respuesta. En vez de dejar al cliente en
   // silencio (el bug del 31/07), le mandamos un mensaje puente y avisamos al manager.
   if (!reply) {
-    failReason = failReason || 'loop_exhausted'
+    failReason = failReason || softFailReason || 'loop_exhausted'
     reply = bridgeMessage(lang)
     console.warn(`[agent] ⚠️  Sin respuesta (${failReason}) → mensaje puente al cliente + alerta al manager.`)
   }
