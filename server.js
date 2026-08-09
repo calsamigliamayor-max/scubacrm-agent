@@ -181,7 +181,7 @@ async function runTool(name, input, phone) {
           totalPrice: input.totalPrice || null,
           language: input.language || 'es',
           // Desglose día a día de un pack a medida (opcional — solo lo manda el modelo
-          // para "Personalized fun dive pack"). El backend valida su forma por su cuenta
+          // para "Personalized dive pack"). El backend valida su forma por su cuenta
           // y lo descarta sin romper la reserva si viene mal formado.
           days: Array.isArray(input.days) ? input.days : null,
         })
