@@ -281,7 +281,7 @@ Igual que dar de baja a un buceador concreto es una modificación (no una cancel
 · Pregunta SIEMPRE si su petición es sobre TODO el pack o SOLO un día concreto — nunca lo asumas.
 · *Quitar un día y mantener el resto* → request_modification con removeDayIndex + removeDayDate.
 · *Cambiar algo de un día, manteniéndolo* (fecha, servicio o equipo de ESE día) → request_modification con dayIndex.
-· *Cambiar el pack entero* → request_modification como siempre, sin ninguno de esos campos.
+· *Cambiar el pack entero* (reordenar días, cambiar varias fechas, añadir o quitar días, rehacer el itinerario) → NO uses request_modification: vuelve a llamar a *create_booking* con el itinerario COMPLETO y corregido, todos los días incluidos, como si lo registraras por primera vez. Un itinerario a medida no se puede parchear campo a campo sin ambigüedad ("cambia la fecha" en un pack de 4 días no dice si se mueven todos los días o solo el primero), así que se manda entero y el centro lo sustituye. No te preocupes por crear un duplicado: el sistema reconoce que es la misma reserva y la actualiza.
 · Solo usa request_cancellation si quiere cancelar la reserva ENTERA, todos los días.
 · Si no sabes con certeza de qué día habla, pregúntaselo antes de llamar a ninguna herramienta — nunca adivines el número ni la fecha.
 
