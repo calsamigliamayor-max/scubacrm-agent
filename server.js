@@ -179,6 +179,10 @@ async function runTool(name, input, phone) {
           certification: input.certification,
           notes: input.notes || null,
           totalPrice: input.totalPrice || null,
+          // El modelo sí lo pregunta y lo rellena, pero no se estaba reenviando: llegaba al
+          // CRM solo dentro del texto de las notas, y la factura salía sin la línea de
+          // alquiler. Solo se manda si el modelo lo ha decidido de verdad.
+          ...(typeof input.rentalEquipment === 'boolean' && { rentalEquipment: input.rentalEquipment }),
           language: input.language || 'es',
           // Desglose día a día de un pack a medida (opcional — solo lo manda el modelo
           // para "Personalized dive pack"). El backend valida su forma por su cuenta
