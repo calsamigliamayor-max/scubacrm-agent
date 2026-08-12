@@ -21,6 +21,13 @@ Detecta el idioma del ÚLTIMO mensaje del cliente y responde ENTERO en ese mismo
 - Antes de enviar cada respuesta, comprueba: "¿está en el mismo idioma que el ÚLTIMO mensaje del cliente?". Si no, reescríbela entera.
 - NUNCA le muestres al cliente dos versiones del mismo mensaje (p.ej. un borrador en español seguido de "la traducción" a su idioma). Genera SIEMPRE directamente la versión final en su idioma — sin versiones previas visibles, ni siquiera para "pensar en voz alta".
 
+## La otra cara de la regla: TODO lo que va al CRM va SIEMPRE en INGLÉS
+Lo de arriba vale para lo que LEE EL CLIENTE. Todo lo que escribes DENTRO de una herramienta lo lee el MANAGER de Malapascua, que trabaja en inglés — así que va SIEMPRE en inglés, sin excepción, hables con el cliente en el idioma que hables.
+- Afecta a TODOS los textos libres de las herramientas: "notes" (create_booking), "change" (request_modification) y "reason" (request_cancellation).
+- No es negociable ni depende del idioma del cliente: si el cliente escribe en español, alemán o coreano, esos campos siguen yendo en inglés. Tú traduces al rellenarlos.
+- Esa traducción es un paso INTERNO e INVISIBLE: nunca la escribes en el chat ni le muestras al cliente la versión inglesa.
+- Antes de llamar a cualquier herramienta, comprueba: "¿están en inglés todos los campos de texto libre?". Si no, reescríbelos.
+
 # Cómo te comportas
 - LO PRIMERO DE TODO: si aún no sabes cómo se llama el cliente, pregúntaselo antes que nada (en su idioma), y a partir de ahí trátale por su nombre.
 - Sé cercano, claro y conciso. No digas que eres una IA ni menciones "Hammerz".
@@ -367,7 +374,7 @@ const TOOLS = [
       properties: {
         clientName:   { type: 'string', description: 'Nombre del cliente' },
         activityDate: { type: 'string', description: 'Fecha de la reserva a cancelar (YYYY-MM-DD), si se conoce' },
-        reason:       { type: 'string', description: 'Motivo de la cancelación, si el cliente lo indica' },
+        reason:       { type: 'string', description: 'Motivo de la cancelación, si el cliente lo indica. SIEMPRE EN INGLÉS (idioma interno del centro), aunque con el cliente hayas hablado en otro idioma: tradúcelo tú al rellenar la herramienta. Ej.: "Flight cancelled, cannot travel", "Ear infection, medically unfit to dive". El manager de Malapascua lo lee en inglés en el CRM.' },
       },
       required: ['clientName'],
     },
@@ -379,7 +386,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         clientName: { type: 'string', description: 'Nombre del cliente' },
-        change:     { type: 'string', description: 'Descripción clara y legible del cambio, para el manager (ej. "pasar de 2 a 3 personas", "cambiar la fecha al 28 de julio").' },
+        change:     { type: 'string', description: 'Descripción clara y legible del cambio, para el manager. SIEMPRE EN INGLÉS (idioma interno del centro), aunque con el cliente hayas hablado en otro idioma: tradúcelo tú al rellenar la herramienta. Ej.: "Increase the number of divers from 2 to 3", "Move the start date to 28 July", "Add a second diver (both Advanced Open Water) to the personalized pack on 16-17 August (Gato Island + Monad/Kimud)". El manager de Malapascua lo lee en inglés en el CRM.' },
         // Campos ESTRUCTURADOS: rellena SOLO el/los que el cliente pide cambiar; deja fuera el resto.
         newActivityDate:  { type: 'string',  description: 'Nueva fecha de inicio en formato YYYY-MM-DD. SOLO si pide cambiar la fecha.' },
         newNumPeople:     { type: 'integer', description: 'Nuevo nº TOTAL de personas. SOLO si pide cambiar cuántos van.' },
