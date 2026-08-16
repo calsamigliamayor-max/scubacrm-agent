@@ -1,6 +1,7 @@
 require('dotenv').config()
 const express = require('express')
 const path = require('path')
+const crypto = require('crypto')
 const Anthropic = require('@anthropic-ai/sdk')
 const twilio = require('twilio')
 const { SYSTEM_PROMPT, TOOLS } = require('./knowledge')
@@ -31,6 +32,15 @@ const TWILIO_ACCOUNT_SID     = process.env.TWILIO_ACCOUNT_SID || ''
 const TWILIO_AUTH_TOKEN      = process.env.TWILIO_AUTH_TOKEN || ''
 const TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER || ''
 const twilioClient = (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN) ? twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) : null
+
+// ─── cost-panel (panel interno de coste de Hammerz) ─────────────────────────
+// Servicio SEPARADO de este CRM — ningún cliente puede verlo. Mandamos aquí datos
+// crudos de cada llamada a Anthropic y de cada WhatsApp saliente propio; el coste en
+// USD se calcula allí, no aquí. Si falta cualquiera de las tres variables, sencillamente
+// no se manda nada (postCostEvents comprueba esto) — no rompe el agente.
+const HAMMERZ_COST_API_URL = process.env.HAMMERZ_COST_API_URL || ''
+const HAMMERZ_COST_SECRET  = process.env.HAMMERZ_COST_SECRET || ''
+const HAMMERZ_CLIENT_SLUG  = process.env.HAMMERZ_CLIENT_SLUG || ''
 
 const app = express()
 app.use(express.json())
@@ -64,6 +74,8 @@ function detectLang(text) {
 
 // Detección UNIVERSAL por IA (Haiku): detecta CUALQUIER idioma. Solo se usa cuando la detección
 // rápida no lo tiene claro. Devuelve el nombre del idioma en español (ej: "alemán", "francés").
+// Devuelve { result, usage, model } — usage/model son para el registro de coste en runAgentTurn;
+// usage viene null si la llamada falló (una llamada que falla no se factura, no hay nada que sumar).
 async function detectLangAI(text) {
   try {
     const r = await client.messages.create({
@@ -73,16 +85,17 @@ async function detectLangAI(text) {
       messages: [{ role: 'user', content: String(text).slice(0, 500) }],
     })
     const out = r.content.filter(c => c.type === 'text').map(c => c.text).join('').trim().toLowerCase().replace(/[.\s]+$/, '')
-    return out && out.length > 0 && out.length < 30 ? out : null
+    return { result: (out && out.length > 0 && out.length < 30) ? out : null, usage: r.usage, model: r.model }
   } catch (err) {
     console.error('[idioma] detección IA falló:', err.message)
-    return null
+    return { result: null, usage: null, model: null }
   }
 }
 
 // Extrae el NOMBRE de pila del cliente de su mensaje, SOLO si se presenta con claridad
 // (ej: "me llamo Luis", "soy Ana", "my name is Liam", "ich heiße Max"). Si no, devuelve null.
 // Sirve para ponerle nombre al Lead en cuanto el cliente lo dice, en cualquier idioma.
+// Devuelve { result, usage, model } — mismo motivo que detectLangAI, ver comentario ahí.
 async function extractClientName(text) {
   try {
     const r = await client.messages.create({
@@ -92,11 +105,11 @@ async function extractClientName(text) {
       messages: [{ role: 'user', content: String(text).slice(0, 500) }],
     })
     const out = r.content.filter(c => c.type === 'text').map(c => c.text).join('').trim().replace(/[.\s]+$/, '')
-    if (!out || out.toLowerCase() === 'none' || out.length > 40) return null
-    return out
+    const result = (!out || out.toLowerCase() === 'none' || out.length > 40) ? null : out
+    return { result, usage: r.usage, model: r.model }
   } catch (err) {
     console.error('[lead] extracción de nombre falló:', err.message)
-    return null
+    return { result: null, usage: null, model: null }
   }
 }
 
@@ -152,6 +165,23 @@ async function postJSON(url, body) {
   let data = null
   try { data = await r.json() } catch { /* respuesta sin JSON */ }
   return { status: r.status, data }
+}
+
+// Manda un lote de eventos crudos de coste al cost-panel — NUNCA al CRM de este cliente
+// (BACKEND_URL), va directo a un servicio aparte con su propio secreto. Fire-and-forget:
+// un fallo aquí no debe afectar ni al turno ni a la reserva. Solo se manda en modo live y
+// solo si el cost-panel está configurado — si falta cualquier variable, no hace nada.
+async function postCostEvents(events) {
+  if (AGENT_MODE !== 'live' || !HAMMERZ_COST_API_URL || !HAMMERZ_COST_SECRET || !events.length) return
+  try {
+    await fetch(`${HAMMERZ_COST_API_URL}/api/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Hammerz-Cost-Secret': HAMMERZ_COST_SECRET },
+      body: JSON.stringify({ clientSlug: HAMMERZ_CLIENT_SLUG, events }),
+    })
+  } catch (err) {
+    console.error('[cost] registro de coste falló:', err.message)
+  }
 }
 
 async function runTool(name, input, phone) {
@@ -248,6 +278,18 @@ async function runTool(name, input, phone) {
 // tanto /chat (playground en el navegador) como el webhook real de WhatsApp.
 // ─────────────────────────────────────────────────────────────────────────────
 async function runAgentTurn(history, phone) {
+  // turnId agrupa TODAS las llamadas a Anthropic de este turno (2 Haiku + N iteraciones
+  // del loop + rescate posible) para que el cost-panel pueda sumarlas como un solo turno.
+  const turnId = crypto.randomUUID()
+  const costEvents = []
+  const anthropicEvent = (callSite, usage, model) => ({
+    pipeline: 'anthropic', bucket: 'sales', turnId, model, anthropicCallSite: callSite,
+    inputTokens: usage?.input_tokens ?? 0,
+    outputTokens: usage?.output_tokens ?? 0,
+    cacheCreationInputTokens: usage?.cache_creation_input_tokens ?? 0,
+    cacheReadInputTokens: usage?.cache_read_input_tokens ?? 0,
+  })
+
   const convo = history.map(m => ({ role: m.role, content: m.content }))
   const systemText = SYSTEM_PROMPT.replace('{{TODAY}}', new Date().toISOString().slice(0, 10))
   // El knowledge base no cambia entre mensajes → lo cacheamos (solo este bloque lleva
@@ -261,7 +303,11 @@ async function runAgentTurn(history, phone) {
   const lastUserMsg = [...history].reverse().find(m => m.role === 'user')
   const lastText = lastUserMsg && typeof lastUserMsg.content === 'string' ? lastUserMsg.content : ''
   let lang = detectLang(lastText)                                    // rápido (ES/EN)
-  if (!lang && lastText.trim().length > 1) lang = await detectLangAI(lastText)  // universal (cualquier idioma)
+  if (!lang && lastText.trim().length > 1) {
+    const d = await detectLangAI(lastText)                           // universal (cualquier idioma)
+    lang = d.result
+    if (d.usage) costEvents.push(anthropicEvent('detect_lang', d.usage, d.model))
+  }
   if (lang) {
     system.push({ type: 'text', text: `⚠️ IDIOMA OBLIGATORIO DE ESTA RESPUESTA: el último mensaje del cliente está en ${lang}. Escribe tu respuesta ENTERA en ${lang}, sin ninguna excepción.` })
   }
@@ -273,12 +319,17 @@ async function runAgentTurn(history, phone) {
   if (AGENT_MODE === 'live') {
     let clientName = null
     if (!capturedNames.has(phone) && lastText.trim().length > 1) {
-      clientName = await extractClientName(lastText)
+      const n = await extractClientName(lastText)
+      clientName = n.result
       if (clientName) capturedNames.add(phone)
+      if (n.usage) costEvents.push(anthropicEvent('extract_name', n.usage, n.model))
     }
     const leadState = await logLeadMessage(phone, 'inbound', 'client', lastText, clientName)
     if (leadState && leadState.agentPaused) {
       console.log('[agent] Conversación en pausa → el agente calla (lo lleva el manager).')
+      // El gasto de extractClientName ya se ha producido aunque el agente calle —
+      // hay que registrarlo igual, o desaparece sin más.
+      postCostEvents(costEvents)
       return { reply: '', paused: true, toolCalls: [] }
     }
   }
@@ -314,6 +365,7 @@ async function runAgentTurn(history, phone) {
       //   cache_read     = tokens servidos del caché (siguientes, ~0.1x)  ← lo que queremos ver crecer
       const u = resp.usage
       console.log(`[caché] escritos:${u.cache_creation_input_tokens || 0} · leídos:${u.cache_read_input_tokens || 0} · sin cachear:${u.input_tokens}`)
+      costEvents.push(anthropicEvent('agent_loop', u, resp.model))
 
       // El modelo se ha quedado sin presupuesto de tokens a media respuesta (incidente real
       // del 07/08: al cliente le llegó un "¡" suelto). Un turno cortado NO sirve para nada:
@@ -377,6 +429,7 @@ async function runAgentTurn(history, phone) {
         tool_choice: { type: 'none' },
         messages: convo,
       })
+      costEvents.push(anthropicEvent('agent_rescue', rescue.usage, rescue.model))
       // Si hasta el rescate se corta, se descarta también: antes un mensaje a medias que
       // un mensaje a medias mandado al cliente. Cae al mensaje puente de abajo.
       if (rescue.stop_reason === 'max_tokens') {
@@ -413,6 +466,7 @@ async function runAgentTurn(history, phone) {
       .catch(err => console.error('[lead] registro saliente falló:', err.message))
   }
 
+  postCostEvents(costEvents)
   return { reply, toolCalls, paused: false, failReason }
 }
 
@@ -553,11 +607,14 @@ app.post('/webhook/whatsapp', express.urlencoded({ extended: false }), async (re
     history.push({ role: 'user', content: body })
     const { reply, paused } = await runAgentTurn(history, phone)
     if (reply && !paused) {
-      await twilioClient.messages.create({
+      const msg = await twilioClient.messages.create({
         from: `whatsapp:${TWILIO_WHATSAPP_NUMBER}`,
         to: from,
         body: reply,
       })
+      // Este envío es la "voz" del agente, no un recordatorio automático del CRM — va
+      // como 'sales' igual que las llamadas a Anthropic de este mismo turno.
+      postCostEvents([{ pipeline: 'whatsapp', bucket: 'sales', twilioSid: msg?.sid || null, whatsappDirection: 'outbound' }])
     }
   } catch (err) {
     console.error('[whatsapp] Error procesando mensaje entrante:', err.message)
