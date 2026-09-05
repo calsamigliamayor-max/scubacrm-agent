@@ -332,6 +332,19 @@ async function runAgentTurn(history, phone) {
       postCostEvents(costEvents)
       return { reply: '', paused: true, toolCalls: [] }
     }
+    // Cliente que vuelve tras un rato (el CRM lo detecta por tiempo transcurrido — ver
+    // routes/leads.js): se lo señalamos al modelo en un bloque de system fresco, igual que
+    // el refuerzo de idioma, para que le salude por su nombre sin preguntárselo de nuevo.
+    if (leadState && leadState.recognizedCustomer) {
+      const rc = leadState.recognizedCustomer
+      system.push({
+        type: 'text',
+        text: `⚠️ CLIENTE RECONOCIDO: esta persona ya ha hablado contigo antes y se llama ${rc.name}. Salúdale por su nombre, con calidez, y NO le preguntes cómo se llama.` +
+          (rc.hasCompletedBooking
+            ? ' Además ya completó una experiencia de buceo con nosotros anteriormente — dale una bienvenida especialmente cálida, como si te alegrara mucho que vuelva.'
+            : ''),
+      })
+    }
   }
 
   const toolCalls = []
