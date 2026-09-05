@@ -33,6 +33,12 @@ const TWILIO_AUTH_TOKEN      = process.env.TWILIO_AUTH_TOKEN || ''
 const TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER || ''
 const twilioClient = (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN) ? twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) : null
 
+// ─── OpenAI (solo para transcribir notas de voz de WhatsApp) ────────────────
+// Pieza aparte de Anthropic (el cerebro del agente) — Claude no acepta audio por API.
+// Si falta la clave, las notas de voz se siguen sin poder entender (comportamiento
+// anterior a esto), pero el resto del agente funciona igual.
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || ''
+
 // ─── cost-panel (panel interno de coste de Hammerz) ─────────────────────────
 // Servicio SEPARADO de este CRM — ningún cliente puede verlo. Mandamos aquí datos
 // crudos de cada llamada a Anthropic y de cada WhatsApp saliente propio; el coste en
@@ -165,6 +171,33 @@ async function postJSON(url, body) {
   let data = null
   try { data = await r.json() } catch { /* respuesta sin JSON */ }
   return { status: r.status, data }
+}
+
+// Descarga una nota de voz de WhatsApp (Twilio exige Basic Auth para leer el adjunto,
+// igual que para mandar mensajes) y la transcribe con Whisper. Tira un error si algo
+// falla — quien llame decide qué hacer (aquí: avisar al manager y mandar el mensaje
+// puente, nunca dejar al cliente sin respuesta ni intentar "adivinar" el audio).
+async function transcribeAudio(mediaUrl, contentType) {
+  const audioRes = await fetch(mediaUrl, {
+    headers: {
+      Authorization: 'Basic ' + Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64'),
+    },
+  })
+  if (!audioRes.ok) throw new Error(`Descarga del audio falló: ${audioRes.status}`)
+  const audioBuffer = await audioRes.arrayBuffer()
+
+  const form = new FormData()
+  form.append('file', new Blob([audioBuffer], { type: contentType || 'audio/ogg' }), 'nota-de-voz.ogg')
+  form.append('model', 'whisper-1')
+
+  const r = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
+    body: form,
+  })
+  if (!r.ok) throw new Error(`Transcripción falló: ${r.status}`)
+  const data = await r.json()
+  return (data.text || '').trim()
 }
 
 // Manda un lote de eventos crudos de coste al cost-panel — NUNCA al CRM de este cliente
@@ -611,9 +644,42 @@ app.post('/webhook/whatsapp', express.urlencoded({ extended: false }), async (re
 
   if (AGENT_MODE !== 'live' || !twilioClient) return
   const from = req.body.From    // 'whatsapp:+34...'
-  const body = (req.body.Body || '').trim()
+  let body = (req.body.Body || '').trim()
+  const phone = from ? from.replace('whatsapp:', '') : ''
+
+  // Nota de voz: WhatsApp la manda como adjunto (MediaUrl0), no como texto — por eso
+  // Body llega vacío y antes el mensaje se descartaba en silencio, sin avisar a nadie.
+  const numMedia = parseInt(req.body.NumMedia || '0', 10)
+  const mediaType = req.body.MediaContentType0 || ''
+  if (!body && numMedia > 0 && mediaType.startsWith('audio/')) {
+    if (!OPENAI_API_KEY) {
+      console.warn('[whatsapp] Nota de voz recibida pero falta OPENAI_API_KEY — no se puede transcribir.')
+    } else {
+      try {
+        body = await transcribeAudio(req.body.MediaUrl0, mediaType)
+      } catch (err) {
+        console.error('[whatsapp] Error transcribiendo audio:', err.message)
+      }
+    }
+    if (!body) {
+      // Mismo camino que cuando el agente no consigue responder por cualquier otro
+      // motivo: mensaje puente al cliente (nunca silencio) + aviso al manager.
+      reportAgentFailure(phone, 'audio_no_transcrito').catch(() => {})
+      try {
+        const msg = await twilioClient.messages.create({
+          from: `whatsapp:${TWILIO_WHATSAPP_NUMBER}`,
+          to: from,
+          body: bridgeMessage(),
+        })
+        postCostEvents([{ pipeline: 'whatsapp', bucket: 'sales', twilioSid: msg?.sid || null, whatsappDirection: 'outbound' }])
+      } catch (err) {
+        console.error('[whatsapp] No se pudo mandar el mensaje puente tras audio fallido:', err.message)
+      }
+      return
+    }
+  }
+
   if (!from || !body) return
-  const phone = from.replace('whatsapp:', '')
 
   try {
     const history = await fetchLeadHistory(phone)
