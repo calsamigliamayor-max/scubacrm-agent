@@ -6,6 +6,19 @@ const Anthropic = require('@anthropic-ai/sdk')
 const twilio = require('twilio')
 const { SYSTEM_PROMPT, TOOLS } = require('./knowledge')
 
+// Sin esto, un error no capturado en cualquier punto del código tumba el proceso con la
+// traza por defecto de Node, sin nada que lo distinga en los logs de un reinicio normal.
+// Con esto queda constancia clara de la causa antes de salir — Railway reinicia solo
+// (restartPolicyType: ON_FAILURE en railway.json), pero así se sabe SIEMPRE por qué murió.
+process.on('uncaughtException', (err) => {
+  console.error('[fatal] excepción no capturada, el proceso se reinicia:', err)
+  process.exit(1)
+})
+process.on('unhandledRejection', (err) => {
+  console.error('[fatal] promesa rechazada sin capturar, el proceso se reinicia:', err)
+  process.exit(1)
+})
+
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const MODEL = process.env.MODEL || 'claude-sonnet-5'
 const PORT = process.env.PORT || 3010
@@ -48,9 +61,35 @@ const HAMMERZ_COST_API_URL = process.env.HAMMERZ_COST_API_URL || ''
 const HAMMERZ_COST_SECRET  = process.env.HAMMERZ_COST_SECRET || ''
 const HAMMERZ_CLIENT_SLUG  = process.env.HAMMERZ_CLIENT_SLUG || ''
 
+// ─── Login del playground público ───────────────────────────────────────────
+// Sin esto, cualquiera con la URL puede chatear con el agente en modo live y crear Leads
+// (y reservas) reales en el CRM de producción, sin que nadie se entere. Protege la página
+// y las rutas de la demo — NUNCA /webhook/whatsapp (tráfico real de Twilio, no manda estas
+// credenciales) ni /api/health (para que la monitorización externa la compruebe sin login).
+// Sin las dos variables puestas, se bloquea en vez de quedarse abierto por defecto.
+const PLAYGROUND_USER     = process.env.PLAYGROUND_USER || ''
+const PLAYGROUND_PASSWORD = process.env.PLAYGROUND_PASSWORD || ''
+function safeEqual(a, b) {
+  const bufA = Buffer.from(String(a))
+  const bufB = Buffer.from(String(b))
+  if (bufA.length !== bufB.length) return false
+  return crypto.timingSafeEqual(bufA, bufB)
+}
+function requirePlaygroundAuth(req, res, next) {
+  if (!PLAYGROUND_USER || !PLAYGROUND_PASSWORD) {
+    return res.status(503).send('Playground sin configurar: faltan PLAYGROUND_USER/PLAYGROUND_PASSWORD.')
+  }
+  const auth = req.headers.authorization
+  if (auth?.startsWith('Basic ')) {
+    const [user, pass] = Buffer.from(auth.slice(6), 'base64').toString().split(':')
+    if (safeEqual(user || '', PLAYGROUND_USER) && safeEqual(pass || '', PLAYGROUND_PASSWORD)) return next()
+  }
+  res.set('WWW-Authenticate', 'Basic realm="Hammerz Agent Playground"')
+  res.status(401).send('Acceso restringido.')
+}
+
 const app = express()
 app.use(express.json())
-app.use(express.static(path.join(__dirname, 'public')))
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HERRAMIENTAS (simuladas). NO tocan ninguna base de datos ni el CRM real.
@@ -528,7 +567,7 @@ async function runAgentTurn(history, phone) {
 // Chat: la usa el playground en el navegador. Recibe el historial visible completo
 // (lo mantiene el propio navegador) y corre un turno del bucle agéntico.
 // ─────────────────────────────────────────────────────────────────────────────
-app.post('/chat', async (req, res) => {
+app.post('/chat', requirePlaygroundAuth, async (req, res) => {
   try {
     if (!process.env.ANTHROPIC_API_KEY) {
       return res.status(500).json({ error: 'Falta ANTHROPIC_API_KEY. Créala en el archivo .env (ver README).' })
@@ -544,11 +583,13 @@ app.post('/chat', async (req, res) => {
 })
 
 // El frontend consulta el modo para avisar si está en LIVE
-app.get('/mode', (req, res) => res.json({ mode: AGENT_MODE }))
+app.get('/mode', requirePlaygroundAuth, (req, res) => res.json({ mode: AGENT_MODE }))
+// Para monitorización externa (uptime): responde rápido, sin tocar el CRM ni Anthropic.
+app.get('/api/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }))
 
 // Proxy: trae del CRM los mensajes salientes de una reserva (para el polling en modo live).
 // Server-to-server, así el navegador no lidia con CORS ni con la URL del backend.
-app.get('/booking-messages/:id', async (req, res) => {
+app.get('/booking-messages/:id', requirePlaygroundAuth, async (req, res) => {
   if (AGENT_MODE !== 'live') return res.json({ messages: [] })
   try {
     const r = await fetch(`${BACKEND_URL}/api/bookings/${req.params.id}`, {
@@ -579,7 +620,7 @@ app.get('/booking-messages/:id', async (req, res) => {
 // ninguna credencial válida para pedir la ruta protegida del backend directamente
 // (ver comentario arriba) — el servidor del agente la pide con su X-Agent-Secret y
 // se la pasa ya lista.
-app.get('/invoice-proxy/:bookingId', async (req, res) => {
+app.get('/invoice-proxy/:bookingId', requirePlaygroundAuth, async (req, res) => {
   if (AGENT_MODE !== 'live') return res.status(404).send('No disponible en modo simulado')
   try {
     const r = await fetch(`${BACKEND_URL}/api/bookings/${req.params.bookingId}/invoice`, {
@@ -595,7 +636,7 @@ app.get('/invoice-proxy/:bookingId', async (req, res) => {
 // Proxy: trae del CRM los mensajes que el MANAGER escribió a mano en la conversación (Lead),
 // para que la ventana del cliente (playground) los muestre → la otra mitad del espejo.
 // Solo mensajes de autor 'manager' (los del agente ya se ven por la respuesta del /chat).
-app.get('/lead-messages/:phone', async (req, res) => {
+app.get('/lead-messages/:phone', requirePlaygroundAuth, async (req, res) => {
   if (AGENT_MODE !== 'live') return res.json({ messages: [], agentPaused: false })
   try {
     const r = await fetch(`${BACKEND_URL}/api/leads/by-phone/${encodeURIComponent(req.params.phone)}`, {
@@ -707,6 +748,11 @@ app.post('/webhook/whatsapp', express.urlencoded({ extended: false }), async (re
     console.error('[whatsapp] Error procesando mensaje entrante:', err.message)
   }
 })
+
+// Registrado AL FINAL a propósito: /webhook/whatsapp y /api/health ya han sido atendidos
+// por sus propias rutas arriba antes de que una petición llegue hasta aquí, así que el
+// login del playground nunca les afecta — solo protege la página y sus assets estáticos.
+app.use(requirePlaygroundAuth, express.static(path.join(__dirname, 'public')))
 
 app.listen(PORT, () => {
   console.log(`\n🤿  Hammerz Agent Playground  →  http://localhost:${PORT}`)
