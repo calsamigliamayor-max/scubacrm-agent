@@ -280,7 +280,7 @@
       }
     } catch (e) {
       typing.remove()
-      profile.messages.push({ role: 'assistant', content: '⚠️ Error de conexión: ' + e.message })
+      profile.messages.push({ role: 'assistant', content: '⚠️ No se pudo contactar con el agente. Lo más probable: falta iniciar sesión — recarga con Ctrl+Shift+R e introduce usuario y contraseña. (Detalle: ' + e.message + ')' })
     }
     // Solo re-renderizamos si el perfil que acaba de recibir respuesta sigue siendo
     // el que se está viendo — si no, no tocamos la pantalla (ya se actualizará él
@@ -305,7 +305,14 @@
       h.style.background = '#3a1414'; h.style.color = '#ff9b9b'
       startPollingActive()   // escucha al CRM desde el principio (mensajes del manager)
     }
-  }).catch(() => {})
+  }).catch(() => {
+    // Si esta llamada falla, la página está sin credenciales válidas (pestaña abierta desde
+    // antes del login, o el navegador no las reenvía) y TODO fallará, incluido enviar un
+    // mensaje. Sin este aviso la página se ve normal y el error solo aparece al escribir.
+    const h = document.getElementById('hint')
+    h.textContent = '⚠️ Sin acceso al agente · recarga con Ctrl+Shift+R e introduce usuario y contraseña'
+    h.style.background = '#3a1414'; h.style.color = '#ff9b9b'
+  })
 
   input.addEventListener('keydown', e => { if (e.key === 'Enter') send() })
 
