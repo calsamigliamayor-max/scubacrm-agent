@@ -315,8 +315,14 @@ async function runAgentTurn(history, phone) {
   // del loop + rescate posible) para que el cost-panel pueda sumarlas como un solo turno.
   const turnId = crypto.randomUUID()
   const costEvents = []
+  // leadId identifica la CONVERSACIÓN (un Lead = un teléfono) para el cost-panel, que lo usa
+  // para contar conversaciones/mes y coste/conversación. Solo se conoce DESPUÉS de
+  // logLeadMessage() más abajo — hasta entonces anthropicEvent() lo deja en null, y en
+  // cuanto se conoce se rellena retroactivamente en los eventos ya empujados (detect_lang,
+  // extract_name), que se generan antes de saberlo.
+  let leadId = null
   const anthropicEvent = (callSite, usage, model) => ({
-    pipeline: 'anthropic', bucket: 'sales', turnId, model, anthropicCallSite: callSite,
+    pipeline: 'anthropic', bucket: 'sales', turnId, leadIdRef: leadId, model, anthropicCallSite: callSite,
     inputTokens: usage?.input_tokens ?? 0,
     outputTokens: usage?.output_tokens ?? 0,
     cacheCreationInputTokens: usage?.cache_creation_input_tokens ?? 0,
@@ -358,6 +364,8 @@ async function runAgentTurn(history, phone) {
       if (n.usage) costEvents.push(anthropicEvent('extract_name', n.usage, n.model))
     }
     const leadState = await logLeadMessage(phone, 'inbound', 'client', lastText, clientName)
+    leadId = leadState?.leadId || null
+    for (const e of costEvents) e.leadIdRef = leadId
     if (leadState && leadState.agentPaused) {
       console.log('[agent] Conversación en pausa → el agente calla (lo lleva el manager).')
       // El gasto de extractClientName ya se ha producido aunque el agente calle —
