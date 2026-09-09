@@ -60,6 +60,11 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY || ''
 const HAMMERZ_COST_API_URL = process.env.HAMMERZ_COST_API_URL || ''
 const HAMMERZ_COST_SECRET  = process.env.HAMMERZ_COST_SECRET || ''
 const HAMMERZ_CLIENT_SLUG  = process.env.HAMMERZ_CLIENT_SLUG || ''
+// 'sales' en producción real. Al correr e2e-suite.js en local se pasa HAMMERZ_COST_BUCKET=
+// testing, para que ese gasto quede reflejado en el cost-panel sin mezclarse con las
+// conversaciones reales de clientes (no cuenta como "conversación" ni "turno" — esas
+// métricas están ancladas a bucket='sales', ver cost-panel/src/routes/summary.js).
+const HAMMERZ_COST_BUCKET  = process.env.HAMMERZ_COST_BUCKET || 'sales'
 
 // ─── Login del playground público ───────────────────────────────────────────
 // Sin esto, cualquiera con la URL puede chatear con el agente en modo live y crear Leads
@@ -361,7 +366,7 @@ async function runAgentTurn(history, phone) {
   // extract_name), que se generan antes de saberlo.
   let leadId = null
   const anthropicEvent = (callSite, usage, model) => ({
-    pipeline: 'anthropic', bucket: 'sales', turnId, leadIdRef: leadId, model, anthropicCallSite: callSite,
+    pipeline: 'anthropic', bucket: HAMMERZ_COST_BUCKET, turnId, leadIdRef: leadId, model, anthropicCallSite: callSite,
     inputTokens: usage?.input_tokens ?? 0,
     outputTokens: usage?.output_tokens ?? 0,
     cacheCreationInputTokens: usage?.cache_creation_input_tokens ?? 0,
@@ -720,7 +725,7 @@ app.post('/webhook/whatsapp', express.urlencoded({ extended: false }), async (re
           to: from,
           body: bridgeMessage(),
         })
-        postCostEvents([{ pipeline: 'whatsapp', bucket: 'sales', twilioSid: msg?.sid || null, whatsappDirection: 'outbound' }])
+        postCostEvents([{ pipeline: 'whatsapp', bucket: HAMMERZ_COST_BUCKET, twilioSid: msg?.sid || null, whatsappDirection: 'outbound' }])
       } catch (err) {
         console.error('[whatsapp] No se pudo mandar el mensaje puente tras audio fallido:', err.message)
       }
@@ -742,7 +747,7 @@ app.post('/webhook/whatsapp', express.urlencoded({ extended: false }), async (re
       })
       // Este envío es la "voz" del agente, no un recordatorio automático del CRM — va
       // como 'sales' igual que las llamadas a Anthropic de este mismo turno.
-      postCostEvents([{ pipeline: 'whatsapp', bucket: 'sales', twilioSid: msg?.sid || null, whatsappDirection: 'outbound' }])
+      postCostEvents([{ pipeline: 'whatsapp', bucket: HAMMERZ_COST_BUCKET, twilioSid: msg?.sid || null, whatsappDirection: 'outbound' }])
     }
   } catch (err) {
     console.error('[whatsapp] Error procesando mensaje entrante:', err.message)
