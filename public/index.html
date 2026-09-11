@@ -85,7 +85,12 @@
   const demoBar = document.getElementById('demo')
   const profilesBar = document.getElementById('profiles')
 
-  function genPhone() { phoneCounter++; return '+346' + String(phoneCounter).padStart(8, '0') }
+  // Antes esto empezaba SIEMPRE en 0 al recargar la página, así que el primer perfil de
+  // cada sesión ("Cliente 1") generaba SIEMPRE el mismo teléfono (+34600000001) — en modo
+  // live eso significa que todo el mundo comparte el mismo Lead del CRM y ve el historial
+  // de mensajes de pruebas de sesiones anteriores. Se mezcla la hora actual para que cada
+  // sesión de navegador genere un teléfono distinto de verdad.
+  function genPhone() { phoneCounter++; const t = Date.now() % 1000000; return '+346' + String(t).padStart(6, '0') + String(phoneCounter).padStart(2, '0') }
   function newProfile(name, phone) {
     return { name, phone: phone || genPhone(), messages: [], pollBookingId: null, shownIds: new Set(), lastBooking: null, demoStep: 0 }
   }

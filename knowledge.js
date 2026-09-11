@@ -368,7 +368,7 @@ const TOOLS = [
   },
   {
     name: 'request_cancellation',
-    description: 'Registra una PETICIÓN de cancelación de la RESERVA ENTERA para que el centro la revise. Úsala cuando el cliente quiera cancelar toda su reserva. Si tiene un pack a medida de varios días y solo quiere quitar UNO de esos días manteniendo el resto, NO es esta herramienta: es request_day_cancellation. No cancela nada de forma definitiva: lo revisa el centro.',
+    description: 'Registra una PETICIÓN de cancelación de la RESERVA ENTERA para que el centro la revise. Úsala cuando el cliente quiera cancelar toda su reserva. Si tiene un pack a medida de varios días y solo quiere quitar UNO de esos días manteniendo el resto, NO es esta herramienta: usa request_modification con removeDayIndex y removeDayDate. No cancela nada de forma definitiva: lo revisa el centro.',
     input_schema: {
       type: 'object',
       properties: {
