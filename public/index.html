@@ -55,7 +55,7 @@
     <header>
       <div class="av"><img src="logo.jpg" alt="logo" onerror="this.parentNode.textContent='🤿'" /></div>
       <div>
-        <h1>Scuba Malapascua</h1>
+        <h1>Malapascua Scuba Eco Adventures</h1>
         <p>agente · playground</p>
       </div>
       <button class="reset" id="demoToggle" onclick="toggleDemo()" title="Controles de demo" style="display:none">🎬</button>
@@ -193,7 +193,7 @@
   function injectInvoice() {
     const b = P().lastBooking || {}
     const total = b.totalPrice ? `₱ ${Number(b.totalPrice).toLocaleString()}` : 'el importe indicado'
-    botMsg(`¡Hola ${b.clientName || ''}! 🤿 Tu reserva en Scuba Malapascua ha sido *confirmada*.\n\n📅 Fecha: ${fmtDate(b.activityDate)}\n💰 Total: ${total}\n\nAdjuntamos tu factura. Para asegurar tu plaza, paga el *50% de depósito* por transferencia o InstaPay y envíanos el comprobante. ¡Nos vemos en el agua! 🌊`,
+    botMsg(`¡Hola ${b.clientName || ''}! 🤿 Tu reserva en Malapascua Scuba Eco Adventures ha sido *confirmada*.\n\n📅 Fecha: ${fmtDate(b.activityDate)}\n💰 Total: ${total}\n\nAdjuntamos tu factura. Para asegurar tu plaza, paga el *50% de depósito* por transferencia o InstaPay y envíanos el comprobante. ¡Nos vemos en el agua! 🌊`,
       { name: `Factura #${b.bookingRef || 'XXXXXX'}.pdf`, booking: b })
   }
   function injectForm() {
@@ -234,7 +234,7 @@
     const deposit = b.totalPrice ? Math.round(b.totalPrice / 2).toLocaleString() : '—'
     const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Factura ${esc(b.bookingRef || '')}</title>
       <style>body{font-family:Arial,sans-serif;max-width:600px;margin:40px auto;color:#222;padding:0 20px}h1{color:#008069;margin-bottom:4px}.muted{color:#888}.row{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #eee}.tot{font-size:20px;font-weight:bold;margin-top:18px;border:0}.dep{margin-top:20px;color:#008069;font-weight:bold}</style></head>
-      <body><h1>🤿 Scuba Malapascua</h1><p class="muted">Factura de reserva · #${esc(b.bookingRef || '')} <b>(SIMULADA)</b></p>
+      <body><h1>🤿 Malapascua Scuba Eco Adventures</h1><p class="muted">Factura de reserva · #${esc(b.bookingRef || '')} <b>(SIMULADA)</b></p>
       <div class="row"><span>Cliente</span><b>${esc(b.clientName || '—')}</b></div>
       <div class="row"><span>Servicio</span><b>${esc(b.service || '—')}</b></div>
       <div class="row"><span>Fecha</span><b>${esc(fmtDate(b.activityDate))}</b></div>
