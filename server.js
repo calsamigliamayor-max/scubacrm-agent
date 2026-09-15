@@ -613,13 +613,33 @@ app.get('/booking-messages/:id', requirePlaygroundAuth, async (req, res) => {
         // Apunta a NUESTRO propio proxy, no al backend directamente — el navegador
         // no tiene ninguna credencial válida (ni JWT de manager, ni la clave del
         // agente, que nunca debe llegar al navegador) para pedir la ruta protegida.
-        attachmentUrl: m.attachmentUrl ? `/invoice-proxy/${req.params.id}` : null,
+        //
+        // BUG real encontrado el 15/09: esto apuntaba SIEMPRE a /invoice-proxy sin mirar
+        // qué adjunto era de verdad — venía de cuando la factura era el único adjunto que
+        // existía. Desde que también hay copia del cuestionario médico (y cualquier adjunto
+        // futuro), había que distinguir por la forma de attachmentUrl (el campo de
+        // visualización que guarda notify.js, ver lib/notify.js del backend): resultado, al
+        // abrir "Medical-Xxx.pdf" en el playground se veía la factura de esa reserva.
+        attachmentUrl: attachmentProxyUrl(m.attachmentUrl, req.params.id),
       }))
     res.json({ status: b.status, messages })
   } catch (err) {
     res.status(500).json({ messages: [], error: err.message })
   }
 })
+
+// Traduce el attachmentUrl de VISUALIZACIÓN que guarda el backend (ver notify.js:
+// `/bookings/:id/invoice` para la factura, `/medical/:bookingId/:personIndex` para el
+// cuestionario médico) a la ruta de proxy correspondiente. Si apareciera un tipo de adjunto
+// nuevo que esta función no reconoce, es mejor no mostrar ningún enlace (null) que asumir
+// por defecto que es la factura — que es exactamente el bug que esto arregla.
+function attachmentProxyUrl(displayUrl, bookingId) {
+  if (!displayUrl) return null
+  if (displayUrl.startsWith('/bookings/')) return `/invoice-proxy/${bookingId}`
+  const medicalMatch = displayUrl.match(/^\/medical\/[^/]+\/(\d+)$/)
+  if (medicalMatch) return `/medical-proxy/${bookingId}/${medicalMatch[1]}`
+  return null
+}
 
 // Proxy: sirve la factura (HTML) al navegador del playground. El navegador no tiene
 // ninguna credencial válida para pedir la ruta protegida del backend directamente
@@ -635,6 +655,22 @@ app.get('/invoice-proxy/:bookingId', requirePlaygroundAuth, async (req, res) => 
     res.status(r.status).setHeader('Content-Type', 'text/html; charset=utf-8').send(html)
   } catch (err) {
     res.status(500).send('Error cargando la factura: ' + err.message)
+  }
+})
+
+// Proxy: igual que el de arriba, pero para la copia del cuestionario médico ya rellenado
+// (PDF binario, no HTML) — mismo motivo: el navegador no tiene credencial válida para la
+// ruta protegida del backend.
+app.get('/medical-proxy/:bookingId/:personIndex', requirePlaygroundAuth, async (req, res) => {
+  if (AGENT_MODE !== 'live') return res.status(404).send('No disponible en modo simulado')
+  try {
+    const r = await fetch(`${BACKEND_URL}/api/medical/${req.params.bookingId}/${req.params.personIndex}/pdf`, {
+      headers: { 'X-Agent-Secret': AGENT_SECRET },
+    })
+    const buf = Buffer.from(await r.arrayBuffer())
+    res.status(r.status).setHeader('Content-Type', 'application/pdf').send(buf)
+  } catch (err) {
+    res.status(500).send('Error cargando el cuestionario médico: ' + err.message)
   }
 })
 
