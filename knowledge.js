@@ -122,17 +122,16 @@ IMPORTANTE sobre TODOS los paquetes (también sus versiones Open Water): incluye
 
 ⚠️ Ya no ofrecemos salidas de larga distancia — los packs se arman solo con inmersiones locales y de media distancia (Monad+Kimud y Gato Island).
 
+💡 REGLA COMÚN para Tridente/Orbe/Corona cuando el cliente es Open Water (nivel mínimo real: Advanced): ofrécele SIEMPRE primero Advanced Open Water + Gato Island (o, si no encaja, un plan a medida) antes que el precio OW del pack. Si aun así lo prefiere siendo Open Water, se puede al precio OW indicado en cada pack (equipo aparte, igual que en la versión Advanced) — SOLO la primera jornada de Monad+Kimud del pack se sustituye por la *especialidad de Conservación de Tiburones* (con su check dive, ver "Inmersiones"); con eso ya queda habilitado para Kimud Shoal, así que si el pack tiene una segunda jornada de Monad+Kimud (Orbe, Corona) esa ya es una inmersión normal, sin repetir la especialidad ni coste extra. El precio OW de cada pack ya incluye este cambio, no hay que sumar nada aparte.
+
 *Tridente — 3 días · 17.600 PHP · 9 inmersiones*
-2 salidas de media distancia (Monad+Kimud y Gato Island) + 1 salida local. Inmersión nocturna opcional. Tasas incluidas. Equipo de alquiler +900 PHP. Nivel mínimo: Advanced.
-💡 Si un cliente Open Water quiere este pack: ofrécele primero el curso *Advanced Open Water + salida a Gato Island* — es prácticamente lo mismo que le daría el Tridente, y además sale de la isla certificado como Advanced. Si aun así prefiere el Tridente siendo Open Water, se puede: precio *18.400 PHP* + equipo (900 PHP) — la jornada de Monad+Kimud se sustituye por la *especialidad de Conservación de Tiburones* (con instructor dedicado, ver "Inmersiones"), así el cliente SÍ ve los tiburones zorro aunque no sea Advanced. El precio ya incluye ese cambio, no hay que sumar nada aparte.
+2 salidas de media distancia (Monad+Kimud y Gato Island) + 1 salida local. Inmersión nocturna opcional. Tasas incluidas. Equipo de alquiler +900 PHP. Nivel mínimo: Advanced. 💡 Precio Open Water: *18.400 PHP* + equipo (900 PHP).
 
 *Orbe — 5 días · 28.900 PHP · 15 inmersiones*
-2 salidas locales + 3 de media distancia (2 de Monad+Kimud, 1 de Gato Island, en días alternos). Nocturna opcional. Tasas incluidas. Equipo +1.700 PHP. Nivel mínimo: Advanced.
-💡 Si un cliente Open Water quiere este pack: ofrécele primero Advanced Open Water + Gato Island, o un plan a medida de inmersiones. Si aun así prefiere el Orbe siendo Open Water, se puede: precio *29.800 PHP* + equipo (1.700 PHP) — SOLO la primera jornada de Monad+Kimud se sustituye por la especialidad de Conservación de Tiburones (con su check dive); con eso ya queda habilitado para Kimud Shoal, así que la segunda jornada de Monad+Kimud es una inmersión normal, sin repetir la especialidad ni coste extra. Precio ya incluido.
+2 salidas locales + 3 de media distancia (2 de Monad+Kimud, 1 de Gato Island, en días alternos). Nocturna opcional. Tasas incluidas. Equipo +1.700 PHP. Nivel mínimo: Advanced. 💡 Precio Open Water: *29.800 PHP* + equipo (1.700 PHP).
 
 *Corona — 7 días · 39.900 PHP · 21 inmersiones*
-3 salidas locales + 4 de media distancia (2 de Monad+Kimud, 2 de Gato Island, en días alternos). Nocturna opcional. Tasas incluidas. Equipo +2.700 PHP. Nivel mínimo: Advanced.
-💡 Si un cliente Open Water quiere este pack: ofrécele primero Advanced Open Water + Gato Island, o un plan a medida de inmersiones. Si aun así prefiere el Corona siendo Open Water, se puede: precio *40.800 PHP* + equipo (2.700 PHP) — SOLO la primera jornada de Monad+Kimud se sustituye por la especialidad de Conservación de Tiburones (con su check dive); con eso ya queda habilitado para Kimud Shoal, así que la segunda jornada de Monad+Kimud es una inmersión normal, sin repetir la especialidad ni coste extra. Precio ya incluido.
+3 salidas locales + 4 de media distancia (2 de Monad+Kimud, 2 de Gato Island, en días alternos). Nocturna opcional. Tasas incluidas. Equipo +2.700 PHP. Nivel mínimo: Advanced. 💡 Precio Open Water: *40.800 PHP* + equipo (2.700 PHP).
 
 *Grupos (mínimo 8 personas) — 5.500 PHP por buceador y día*
 Salidas de 3 inmersiones, cualquier destino local o de media distancia a elegir, tour leader gratis, nocturna opcional, tasas del santuario incluidas. Equipo +850 PHP/día. Nivel mínimo: Advanced.
