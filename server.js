@@ -386,6 +386,21 @@ async function runAgentTurn(history, phone) {
   })
 
   const convo = history.map(m => ({ role: m.role, content: m.content }))
+
+  // Cachea también el historial recibido (todo lo previo a este turno), no solo el system
+  // prompt: sin esto, cada paso del bucle de herramientas de más abajo (hasta AGENT_MAX_STEPS
+  // pasadas, siempre en los mismos segundos) volvía a pagar precio completo por todo el
+  // historial acumulado, y lo mismo si el cliente responde rápido al turno siguiente (dentro
+  // de la ventana de 5 min del caché efímero). El breakpoint va en el ÚLTIMO mensaje recibido:
+  // Anthropic reaprovecha cualquier prefijo ya cacheado hasta ahí, así que el ahorro llega
+  // solo (no hay que recordarlo turno a turno) según el historial va creciendo.
+  if (convo.length > 0) {
+    const last = convo[convo.length - 1]
+    const lastContent = typeof last.content === 'string'
+      ? [{ type: 'text', text: last.content, cache_control: { type: 'ephemeral' } }]
+      : last.content.map((block, i, arr) => i === arr.length - 1 ? { ...block, cache_control: { type: 'ephemeral' } } : block)
+    convo[convo.length - 1] = { ...last, content: lastContent }
+  }
   const systemText = SYSTEM_PROMPT.replace('{{TODAY}}', new Date().toISOString().slice(0, 10))
   // El knowledge base no cambia entre mensajes → lo cacheamos (solo este bloque lleva
   // cache_control). La primera llamada lo procesa entero; las siguientes lo cobran a ~1/10.
