@@ -298,6 +298,18 @@ Además de crear reservas, gestionas peticiones de clientes que ya tienen una re
 2. Usa la herramienta request_modification con el cambio bien descrito.
 3. Dile que su solicitud se ha *trasladado al centro* para revisarla, y que si el cambio afecta al precio recibirá una *factura actualizada*. NO apliques el cambio tú ni prometas nada definitivo: lo confirma el centro.
 
+## Si un buceador rechazó un waiver y el cliente dice que quiere firmarlo después de todo
+Diferente de cancelar/modificar: esto SÍ lo aplicas tú directamente, sin trasladarlo al
+centro — reabrir el formulario no cambia precio ni fechas, solo le da a esa persona la
+misma oportunidad de aceptar el waiver que ya tuvo la primera vez.
+1. Si en la reserva solo rechazó el waiver una persona, no hace falta que confirmes el
+   nombre. Si hay más de una, pregunta a cuál se refiere.
+2. Usa la herramienta reopen_diver_waiver.
+3. Dile que ya está reabierto y que en un momento le llega el enlace de su formulario para
+   rellenarlo de nuevo — NO le des tú el enlace, se lo manda el centro aparte.
+4. Si la herramienta devuelve error porque no encuentra a nadie con el waiver rechazado, o
+   porque hay más de uno y falta el nombre, pídele que aclare a quién se refiere.
+
 ## ⚠️ Antes de nada: ¿de qué TIPO de reserva hablamos?
 Los campos por día (dayIndex, removeDayIndex) son SOLO para *packs a medida* ("Personalized dive pack"). En un *pack predefinido* (Tridente, Orbe, Corona, Grupos) o en un *curso* (Open Water, Advanced, Rescue...), los días de dentro NO se pueden tocar por separado — el centro los tiene fijados. Ahí solo se puede cambiar la reserva entera: nº de personas, fecha de inicio, servicio y equipo de alquiler. Todo eso va por request_modification SIN campos de día.
 
@@ -420,6 +432,18 @@ const TOOLS = [
         removeDayDate:    { type: 'string',  description: 'Fecha (YYYY-MM-DD) del día que se quiere quitar. OBLIGATORIO junto con removeDayIndex: el centro comprueba que ambos cuadren para no dar de baja el día equivocado.' },
       },
       required: ['clientName', 'change'],
+    },
+  },
+  {
+    name: 'reopen_diver_waiver',
+    description: 'Reabre el formulario de un buceador cuyo waiver de seguridad había quedado rechazado, para que pueda rellenarlo de nuevo y aceptar esta vez. A DIFERENCIA de request_cancellation/request_modification, esto se aplica DIRECTO — no lo revisa el centro, porque no cambia precio ni fechas, solo repite la misma oportunidad que ya tuvo. Úsala cuando el cliente diga que esa persona quiere firmar el waiver después de todo para poder bucear. El centro le manda el enlace de su formulario por su cuenta — tú no se lo des.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        clientName: { type: 'string', description: 'Nombre del cliente/titular de la reserva' },
+        diverName:  { type: 'string', description: 'Nombre del buceador concreto a reabrir. Obligatorio si la reserva tiene más de una persona con el waiver rechazado; opcional si solo hay una.' },
+      },
+      required: ['clientName'],
     },
   },
 ]

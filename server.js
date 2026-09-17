@@ -326,6 +326,14 @@ async function runTool(name, input, phone) {
         console.log('[tool·live] request_modification →', status, data)
         return { ok: status < 300, live: true, backendStatus: status, ...data, ...input }
       }
+      if (name === 'reopen_diver_waiver') {
+        const { status, data } = await postJSON(`${BACKEND_URL}/api/webhook/booking/reopen-diver-waiver`, {
+          clientName: input.clientName, clientPhone,
+          diverName: input.diverName || null,
+        })
+        console.log('[tool·live] reopen_diver_waiver →', status, data)
+        return { ok: status < 300, live: true, backendStatus: status, ...data, ...input }
+      }
     } catch (err) {
       console.error('[tool·live] Error:', err.message)
       return { ok: false, live: true, error: err.message, ...input }
@@ -345,6 +353,10 @@ async function runTool(name, input, phone) {
   if (name === 'request_modification') {
     console.log('[tool] request_modification (SIMULADO):', input)
     return { ok: true, simulated: true, status: 'MODIFICATION_REQUESTED', ...input }
+  }
+  if (name === 'reopen_diver_waiver') {
+    console.log('[tool] reopen_diver_waiver (SIMULADO):', input)
+    return { ok: true, simulated: true, status: 'AWAITING_FORM', ...input }
   }
   return { ok: false, error: `Herramienta desconocida: ${name}` }
 }
