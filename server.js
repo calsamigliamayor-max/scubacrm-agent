@@ -275,6 +275,9 @@ async function runTool(name, input, phone) {
           `Start date: ${input.activityDate}`,
           `Divers: ${input.numPeople} · ${input.certification}`,
           `Rental equipment: ${input.rentalEquipment ? 'yes' : 'own equipment'}`,
+          (Array.isArray(input.rentalItems) && input.rentalItems.length > 0)
+            ? `Loose rental items: ${input.rentalItems.map(r => `${r.key} (${r.rate})`).join(', ')}`
+            : null,
           input.totalPrice ? `Total: ${Number(input.totalPrice).toLocaleString()} PHP` : null,
         ].filter(Boolean).join('\n')
         // Mandamos los datos YA estructurados: el CRM se fía de ellos y no tiene que readivinar.
@@ -290,6 +293,9 @@ async function runTool(name, input, phone) {
           // CRM solo dentro del texto de las notas, y la factura salía sin la línea de
           // alquiler. Solo se manda si el modelo lo ha decidido de verdad.
           ...(typeof input.rentalEquipment === 'boolean' && { rentalEquipment: input.rentalEquipment }),
+          // Piezas sueltas (máscara, traje...) ya acordadas en el chat — distinto de
+          // rentalEquipment (equipo completo). El backend valida su forma por su cuenta.
+          rentalItems: Array.isArray(input.rentalItems) ? input.rentalItems : null,
           language: input.language || 'es',
           // Desglose día a día de un pack a medida (opcional — solo lo manda el modelo
           // para "Personalized dive pack"). El backend valida su forma por su cuenta

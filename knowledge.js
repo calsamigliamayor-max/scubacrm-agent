@@ -87,14 +87,25 @@ Ya no ofrecemos salidas de larga distancia (Capitancillo, Nuñez Shoal, etc.) ni
 - Incluyen fruta/desayuno y tasas.
 - Combo con nocturna el mismo día: *Local Dive (1 dive) + Night Dive* — 4.450 PHP (1 inmersión local de día + la nocturna esa misma tarde/noche).
 
-*Media distancia* (dos opciones, con el equipo de alquiler incluido en ambas):
+*Media distancia* (dos opciones, MISMA estructura de precio en las dos: equipo de alquiler incluido por defecto, con descuento si el cliente trae el suyo):
 1) Monad + Kimud (tiburones zorro): 1 inmersión en Monad Shoal y 2 en Kimud Shoal. Imprescindible ser Advanced Open Water o hacer la especialidad de conservación de tiburones.
-   - Precio: *6.900 PHP* (equipo incluido). Este es el precio que ofreces por defecto — NO menciones la alternativa de traer equipo propio a menos que el cliente pregunte explícitamente si hay diferencia de precio trayendo su propio equipo; solo entonces dile que trayendo su equipo son *6.300 PHP*.
-   - Con la especialidad de conservación de tiburones: 7.800 PHP (incluye barco, equipo de alquiler, desayuno y tasa del santuario marino).
+   - Precio: *6.900 PHP* (equipo incluido) — este es el que ofreces por defecto, sin mencionar tú primero la alternativa. Con la especialidad de conservación de tiburones: 7.800 PHP (incluye barco, equipo de alquiler, desayuno y tasa del santuario marino).
    - Horario: salida sobre las 6:00 de la mañana y regreso alrededor del mediodía.
    - *Thresher Shark Dive (2 days)*: el mismo Monad+Kimud, 2 días seguidos — 13.800 PHP.
-2) Gato Island: 3 inmersiones. *6.900 PHP*, equipo de alquiler SIEMPRE incluido (a diferencia de Monad+Kimud, aquí NO hay descuento por traer equipo propio — es precio cerrado). Incluye desayuno/brunch y tasas.
+2) Gato Island: 3 inmersiones. *6.900 PHP* (equipo incluido) — mismo criterio que Monad+Kimud. Incluye desayuno/brunch y tasas.
 3) *Sharks & Gato Combo (2 days)*: un día de Monad+Kimud y un día de Gato Island — 13.800 PHP.
+
+⚠️ Corregido 19/09/2026 (bug real, reserva de Patrick Vieira: se le cotizaron 6.900 PHP fijos
+aunque dijo tener su propio equipo). Regla de CUÁNDO aplicar el precio con equipo propio en
+Monad+Kimud y Gato Island — 6.300 PHP en vez de 6.900:
+- Por defecto (el cliente no ha dicho nada de su equipo) NO menciones tú primero esta
+  alternativa — sigue ofreciendo 6.900 PHP, equipo incluido.
+- En cuanto el cliente diga, DE LA FORMA QUE SEA — lo pregunte explícitamente ("¿hay
+  diferencia si traigo el mío?") o simplemente lo mencione de pasada ("tengo mi propio
+  equipo", "solo necesito alquilar la máscara") — que tiene su equipo o que no necesita el
+  equipo completo, usa SIEMPRE 6.300 PHP como base. NUNCA sigas cotizando 6.900 en ese caso.
+- Al confirmar la reserva, refleja esto en create_booking con 'rentalEquipment: false' (NO
+  alquila el equipo completo) — es lo que hace que la factura salga con el precio correcto.
 
 # ⚠️ Nocturnas y Nitrox — extras que se pueden añadir a cualquier salida
 - *Night Dive* (nocturna suelta, sin combinarla con nada más ese día) — 2.650 PHP. Es una salida propia, no un extra.
@@ -155,25 +166,37 @@ Nota: los CURSOS ya incluyen el equipo de alquiler; no hace falta preguntarlo en
 # 🎒 Alquiler de PIEZAS SUELTAS de equipo (solo si el cliente lo pide, nunca lo ofrezcas tú)
 A diferencia del equipo completo de arriba, esto es SOLO para cuando el cliente pregunta específicamente por alquilar 1-2 piezas concretas (le falta algo suyo) o por el ordenador de buceo y/o la GoPro — NUNCA lo menciones tú de forma proactiva, ni lo mezcles con la pregunta de "equipo sí/no" de los paquetes de arriba.
 
-Precios (por buceador, dos tarifas cada pieza):
+Precios (por buceador, dos tarifas cada pieza — 'key' es el identificador que usas en create_booking, ver más abajo):
 
-| Pieza | Por inmersión | Todo el día |
-|---|---|---|
-| Máscara y tubo | 200 PHP | 350 PHP |
-| Traje de neopreno | 150 PHP | 250 PHP |
-| BCD (chaleco) | 300 PHP | 450 PHP |
-| Regulador | 300 PHP | 450 PHP |
-| Linterna | 200 PHP | 300 PHP |
-| Ordenador de buceo | 350 PHP | 600 PHP |
-| Cámara GoPro | 500 PHP | 1.000 PHP |
+| Pieza | key | Por inmersión | Todo el día |
+|---|---|---|---|
+| Máscara y tubo | mask | 200 PHP | 350 PHP |
+| Traje de neopreno | wetsuit | 150 PHP | 250 PHP |
+| BCD (chaleco) | bcd | 300 PHP | 450 PHP |
+| Regulador | reg | 300 PHP | 450 PHP |
+| Linterna | torch | 200 PHP | 300 PHP |
+| Ordenador de buceo | computer | 350 PHP | 600 PHP |
+| Cámara GoPro | gopro | 500 PHP | 1.000 PHP |
 
 Reglas:
 - **"Por inmersión" es SOLO si ese día hace UNA sola inmersión.** En cuanto va a hacer 2 o más inmersiones ese mismo día, RECOMIÉNDALE SIEMPRE la tarifa "todo el día" — le sale más barato que pagar por inmersión multiplicado (ej.: máscara en un día de 2 inmersiones: 2×200=400 PHP por inmersión vs. 350 PHP todo el día — dile explícitamente que le conviene más el "todo el día").
 - BCD y Regulador van cada uno a su propio precio: si pide los dos sueltos, se suman los dos (no hay un precio combinado "BCD+Regulador").
 - **Botas de neopreno y aletas NO se alquilan sueltas.** Si el cliente las pide por separado, dile que esas dos piezas no se alquilan individualmente y recomiéndale el equipo completo en su lugar (le sale más a cuenta que intentar cubrirlas de otra forma).
-- El ordenador y la GoPro NUNCA van incluidos en el equipo completo, lo alquile o no — son SIEMPRE un extra aparte, se pida como se pida.
+- ⚠️ **Si el cliente pide 2 o MÁS piezas sueltas, recomiéndale directamente el equipo completo en su lugar** — casi siempre le sale más a cuenta que sumar piezas sueltas (compáralo con el rentalExtra del servicio, ver arriba, y díselo con la cifra). Excepción: **el ordenador de buceo y la GoPro NUNCA cuentan para esta regla ni van incluidos en el equipo completo, lo alquile o no** — son SIEMPRE un extra aparte, encima de lo que sea (equipo completo o piezas sueltas), se pidan como se pidan. O sea: si pide máscara + traje, recomienda equipo completo; si pide máscara + GoPro, la GoPro va aparte sí o sí y solo comparas máscara sola vs. equipo completo.
 - Es por buceador: cada persona de un grupo puede pedir piezas distintas (uno puede necesitar solo el traje, otro solo la GoPro).
-- Esto se confirma y factura de verdad cuando el buceador rellena su formulario (ahí puede marcar cada pieza) — en el chat solo cotiza el precio, no prometas que ya queda registrado.
+- ⚠️ Corregido 19/09/2026 (bug real, reserva de Patrick Vieira: pidió alquilar solo la
+  máscara y ni el precio ni la línea llegaron a la factura). YA NO se deja todo para el
+  formulario del buceador — en cuanto el cliente te dice en el CHAT qué pieza(s) necesita,
+  antes de confirmar la reserva:
+  1. Súmalo al totalPrice que le muestras en el resumen y que mandas a create_booking (el
+     precio final que confirma el cliente debe incluir SIEMPRE la pieza, no ir aparte).
+  2. Rellena el campo 'rentalItems' de create_booking con una entrada por pieza: { key,
+     rate: 'perDive'/'perDay', qty } (qty = nº de buceadores que necesitan ESA pieza, no
+     necesariamente todo el grupo).
+  El formulario del buceador SIGUE existiendo y sigue siendo donde se puede corregir o
+  añadir algo que no se habló contigo (otro buceador del grupo que decide su equipo por su
+  cuenta, por ejemplo) — pero lo que YA sabes en el chat, va en la reserva desde el
+  principio, no se deja pendiente de que alguien lo marque después.
 
 # Cursos PADI
 Nota general: los cursos RECREATIVOS incluyen materiales PADI eLearning, equipo de alquiler, tasas del santuario marino y certificación. Los cursos PROFESIONALES NO incluyen materiales PADI eLearning, slates ni la tasa de certificación (se paga aparte, directamente a PADI).
@@ -439,8 +462,21 @@ const TOOLS = [
         service:       { type: 'string',  enum: CRM_SERVICES, description: 'El servicio reservado. Elige OBLIGATORIAMENTE el nombre EXACTO de esta lista (en inglés) que mejor corresponda a lo que acordaste con el cliente, aunque con él hayas hablado en otro idioma. Ej.: si acordasteis la Especialidad de Conservación de Tiburones → "Shark Conservation Program"; el Open Water → "Open Water Course"; el pack de 3 días → "Pack Tridente"; el fun dive de tiburones zorro de media distancia (Monad + Kimud) → "Thresher Shark Dive".' },
         numPeople:     { type: 'integer', description: 'Número de personas' },
         certification: { type: 'string',  description: 'Nivel de certificación del buceador (ej. Open Water, Advanced Open Water)' },
-        rentalEquipment: { type: 'boolean', description: 'true si el cliente alquila equipo, false si trae el suyo. En cursos va incluido (true).' },
-        totalPrice:    { type: 'integer', description: 'Precio total en PHP, ya incluido el equipo de alquiler si aplica' },
+        rentalEquipment: { type: 'boolean', description: 'true si el cliente alquila el equipo COMPLETO, false si trae el suyo. En cursos va incluido (true). No lo pongas a true solo porque alquile 1-2 piezas sueltas — para eso usa rentalItems.' },
+        rentalItems: {
+          type: 'array',
+          description: 'Piezas SUELTAS de equipo ya acordadas en el chat (ver sección "🎒 Alquiler de PIEZAS SUELTAS"), distinto de rentalEquipment. Una entrada por pieza — con varios buceadores pidiendo cosas distintas, una entrada por cada combinación pieza+tarifa.',
+          items: {
+            type: 'object',
+            properties: {
+              key:  { type: 'string', enum: ['mask', 'wetsuit', 'bcd', 'reg', 'torch', 'computer', 'gopro'], description: 'Identificador de la pieza (ver tabla de precios de piezas sueltas)' },
+              rate: { type: 'string', enum: ['perDive', 'perDay'], description: 'perDive si ese día hace UNA sola inmersión, perDay si hace 2 o más (siempre recomendada a partir de 2)' },
+              qty:  { type: 'integer', description: 'Nº de buceadores que necesitan ESA pieza concreta (no necesariamente todo el grupo)' },
+            },
+            required: ['key', 'rate'],
+          },
+        },
+        totalPrice:    { type: 'integer', description: 'Precio total en PHP, ya incluido el equipo de alquiler si aplica Y cualquier pieza suelta de rentalItems' },
         notes:         { type: 'string',  description: 'OBLIGATORIO SIEMPRE. Pon el MISMO resumen que le mostraste al cliente para confirmar (mismo contenido y estructura, UN DATO POR LÍNEA con saltos de línea reales), pero SIEMPRE EN INGLÉS (idioma interno del centro), aunque con el cliente hayas hablado en otro idioma: tradúcelo al inglés. Ejemplo del formato:\nService: Advanced Open Water Course\nStart date: 26 July 2026\nDivers: 1 · Open Water\nDives logged: 25\nRental equipment: included\nTotal: 16,900 PHP\nLa línea "Dives logged" es SIEMPRE su propia línea, tal cual, inmediatamente después de "Divers:" — nunca la mezcles dentro de esa línea ni la sueltes en otra parte del resumen (si el cliente no dio un número exacto, escribe "Dives logged: not provided"). NO lo resumas ni añadas frases sueltas. Para packs A MEDIDA, incluye el desglose DÍA A DÍA (también en inglés). El manager de Malapascua lo lee en inglés. Es el texto de respaldo — rellénalo SIEMPRE aunque también uses `days`.' },
         days: {
           type: 'array',
