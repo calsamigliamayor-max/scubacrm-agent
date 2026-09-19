@@ -443,10 +443,25 @@ async function runAgentTurn(history, phone) {
   // orden específica y fresca en un 2º bloque de system (sin cache_control, va justo antes de
   // los mensajes → máxima relevancia). Una orden concreta ("responde en inglés") pega mucho
   // más que la regla general enterrada en el prompt.
+  //
+  // ⚠️ Bug real (19/09/2026, reserva de Lewis Johannes, fase lead): tras varios turnos en
+  // inglés, el cliente contestó solo "Great!" y el agente respondió el turno SIGUIENTE
+  // entero en español. detectLang("Great!") ya da null (sin señal fuerte ni en un idioma ni
+  // en otro), así que caía en detectLangAI — pedirle a un modelo que clasifique el idioma de
+  // UNA palabra suelta es pedirle que adivine, y adivinó mal. El fallo de fondo: esto volvía
+  // a detectar desde cero en CADA turno, sin memoria de qué idioma llevaba la conversación,
+  // así que un solo acierto fallido de un mensaje corto bastaba para descarrilarla entera.
+  //
+  // Arreglo: detectLangAI (el paso que puede adivinar mal) SOLO se llama si el último
+  // mensaje tiene contenido de verdad (≥3 palabras). Con un mensaje corto tipo "Great!",
+  // "Ok", "Sí", un número o un nombre, NO se manda ninguna orden de idioma este turno —el
+  // modelo sigue con el idioma que ya llevaba la conversación (lo ve en el historial), en
+  // vez de arriesgarse a que una IA le imponga un idioma nuevo a partir de una sola palabra.
   const lastUserMsg = [...history].reverse().find(m => m.role === 'user')
   const lastText = lastUserMsg && typeof lastUserMsg.content === 'string' ? lastUserMsg.content : ''
+  const hasEnoughSignal = lastText.trim().split(/\s+/).filter(Boolean).length >= 3
   let lang = detectLang(lastText)                                    // rápido (ES/EN)
-  if (!lang && lastText.trim().length > 1) {
+  if (!lang && hasEnoughSignal) {
     const d = await detectLangAI(lastText)                           // universal (cualquier idioma)
     lang = d.result
     if (d.usage) costEvents.push(anthropicEvent('detect_lang', d.usage, d.model))
