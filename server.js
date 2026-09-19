@@ -332,7 +332,10 @@ async function runTool(name, input, phone) {
           diverName: input.diverName || null,
         })
         console.log('[tool·live] reopen_diver_waiver →', status, data)
-        return { ok: status < 300, live: true, backendStatus: status, ...data, ...input }
+        // `data.diverName` es el nombre COMPLETO real (form.fullName en el backend) — va
+        // DESPUÉS de `...input` a propósito, para que no lo pise el nombre parcial que
+        // haya escrito el agente en `input.diverName` (p. ej. "Julio" vs "Julio Martínez").
+        return { ok: status < 300, live: true, backendStatus: status, ...input, ...data }
       }
     } catch (err) {
       console.error('[tool·live] Error:', err.message)
@@ -356,7 +359,14 @@ async function runTool(name, input, phone) {
   }
   if (name === 'reopen_diver_waiver') {
     console.log('[tool] reopen_diver_waiver (SIMULADO):', input)
-    return { ok: true, simulated: true, status: 'AWAITING_FORM', ...input }
+    // Enlace y nombre falsos pero con la MISMA forma que devuelve el backend real, para
+    // que probar este flujo en el playground se comporte igual que en producción.
+    return {
+      ok: true, simulated: true, status: 'AWAITING_FORM',
+      ...input,
+      diverName: input.diverName || 'Diver de prueba',
+      link: `https://scubacrm-frontend-production.up.railway.app/form/SIMULATED-BOOKING/1?lang=en`,
+    }
   }
   return { ok: false, error: `Herramienta desconocida: ${name}` }
 }
