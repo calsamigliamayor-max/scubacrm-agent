@@ -797,6 +797,47 @@ app.post('/webhook/whatsapp', express.urlencoded({ extended: false }), async (re
   }
 
   if (!from || !body) return
+  bufferIncomingMessage(phone, from, body)
+})
+
+// ─── Ráfaga de mensajes: agrupar antes de responder ─────────────────────────
+// Un cliente que escribe "Buenos días" y, dos segundos después, "cómo estás" en un
+// segundo mensaje aparte, esperaba UNA respuesta a los dos juntos — sin esto, cada
+// mensaje disparaba su propio turno completo, y el agente contestaba dos veces por
+// separado (visto de verdad en el playground, 19/09/2026; idea ya explorada el 06/09 y
+// el 11/09, nunca construida hasta ahora). Solo aplica a WhatsApp real: el playground
+// (/chat) es un tester manual, cada envío ya es una acción deliberada de quien prueba, no
+// una ráfaga real — meterle el mismo retraso ahí solo haría las pruebas más lentas sin
+// arreglar nada.
+//
+// Por teléfono: los mensajes que lleguen dentro de AGENT_REPLY_DELAY_MS desde el ÚLTIMO
+// mensaje se acumulan y reinician el temporizador; en cuanto pasan esos segundos sin que
+// llegue uno nuevo, se procesan todos juntos como un solo turno (una sola entrada en el
+// historial del Lead, con saltos de línea entre mensajes). AGENT_REPLY_MAX_WAIT_MS es el
+// tope: si el cliente no para de escribir, no le hacemos esperar para siempre.
+const AGENT_REPLY_DELAY_MS    = Number(process.env.AGENT_REPLY_DELAY_MS ?? 12000)
+const AGENT_REPLY_MAX_WAIT_MS = Number(process.env.AGENT_REPLY_MAX_WAIT_MS ?? 45000)
+const pendingByPhone = new Map()   // phone -> { messages: string[], timer, firstAt }
+
+function bufferIncomingMessage(phone, from, body) {
+  let pending = pendingByPhone.get(phone)
+  if (!pending) {
+    pending = { messages: [], timer: null, firstAt: Date.now() }
+    pendingByPhone.set(phone, pending)
+  }
+  pending.messages.push(body)
+  if (pending.timer) clearTimeout(pending.timer)
+
+  const elapsed = Date.now() - pending.firstAt
+  const wait = elapsed >= AGENT_REPLY_MAX_WAIT_MS ? 0 : Math.min(AGENT_REPLY_DELAY_MS, AGENT_REPLY_MAX_WAIT_MS - elapsed)
+  pending.timer = setTimeout(() => flushPendingMessages(phone, from), wait)
+}
+
+async function flushPendingMessages(phone, from) {
+  const pending = pendingByPhone.get(phone)
+  if (!pending) return
+  pendingByPhone.delete(phone)
+  const body = pending.messages.join('\n')
 
   try {
     const history = await fetchLeadHistory(phone)
@@ -815,7 +856,7 @@ app.post('/webhook/whatsapp', express.urlencoded({ extended: false }), async (re
   } catch (err) {
     console.error('[whatsapp] Error procesando mensaje entrante:', err.message)
   }
-})
+}
 
 // Registrado AL FINAL a propósito: /webhook/whatsapp y /api/health ya han sido atendidos
 // por sus propias rutas arriba antes de que una petición llegue hasta aquí, así que el
