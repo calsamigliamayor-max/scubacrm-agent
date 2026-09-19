@@ -337,6 +337,13 @@ async function runTool(name, input, phone) {
         // haya escrito el agente en `input.diverName` (p. ej. "Julio" vs "Julio Martínez").
         return { ok: status < 300, live: true, backendStatus: status, ...input, ...data }
       }
+      if (name === 'get_payment_status') {
+        const { status, data } = await postJSON(`${BACKEND_URL}/api/webhook/booking/payment-status`, {
+          clientName: input.clientName, clientPhone,
+        })
+        console.log('[tool·live] get_payment_status →', status, data)
+        return { ok: status < 300, live: true, backendStatus: status, ...input, ...data }
+      }
     } catch (err) {
       console.error('[tool·live] Error:', err.message)
       return { ok: false, live: true, error: err.message, ...input }
@@ -366,6 +373,16 @@ async function runTool(name, input, phone) {
       ...input,
       diverName: input.diverName || 'Diver de prueba',
       link: `https://scubacrm-frontend-production.up.railway.app/form/SIMULATED-BOOKING/1?lang=en`,
+    }
+  }
+  if (name === 'get_payment_status') {
+    console.log('[tool] get_payment_status (SIMULADO):', input)
+    // Cifras falsas pero con la misma forma que devuelve el backend real.
+    return {
+      ok: true, simulated: true, ...input,
+      amountPaid: 4250, total: 8500, depositRequired: 4250, balanceDue: 4250,
+      amountPaidFormatted: '₱ 4,250', totalFormatted: '₱ 8,500',
+      depositRequiredFormatted: '₱ 4,250', balanceDueFormatted: '₱ 4,250',
     }
   }
   return { ok: false, error: `Herramienta desconocida: ${name}` }
