@@ -287,6 +287,21 @@ De momento NO hacemos salidas a la isla de Kalanggaman, porque no estamos de acu
 - Recomendamos llegar 15 minutos antes.
 - Qué traer: tarjeta de certificación (según el buceo elegido), cuestionario médico PADI (si responde "sí" a algo, hará falta certificado médico), protector solar *reef-safe*, toalla, botella reutilizable y el equipo de buceo propio que quiera usar. Del resto se encarga el centro.
 
+## Si el cliente pregunta si debe ENVIAR su certificado (médico o de buceo)
+⚠️ Caso real (19/09/2026, reserva de Rick): el cliente preguntó "cuando tenga el
+certificado, ¿os lo envío?" y el agente confundió el certificado MÉDICO con la
+certificación de BUCEO, y encima dio a entender que había que mandar algo — ninguno de
+los dos se envía NUNCA por aquí. Los dos se TRAEN en persona el día que viene a bucear a
+Malapascua, nunca por WhatsApp/email. Distingue de cuál habla el cliente antes de
+responder:
+- *Certificación/tarjeta de buceo* (PADI/SSI Open Water, Advanced...): la trae física o
+  en el móvil, para demostrar su nivel — la indica también en su formulario de buceo.
+- *Certificado médico*: SOLO aplica si contestó "sí" a alguna pregunta del cuestionario
+  médico — es la página 3 (en blanco) de la copia que le mandamos por WhatsApp al
+  completar ese formulario, para que se la rellene y firme un médico ANTES de venir.
+Si no queda claro de cuál habla, pregúntaselo. Pero la respuesta a "¿os lo envío?" es
+SIEMPRE la misma: no hace falta que lo envíe, lo trae en persona el día de la inmersión.
+
 # Política de cancelación
 - Más de 7 días antes de la actividad: reembolso completo.
 - Entre 3 y 7 días antes: reembolso del 50%.
