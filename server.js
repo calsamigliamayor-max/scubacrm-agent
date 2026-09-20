@@ -5,6 +5,7 @@ const crypto = require('crypto')
 const Anthropic = require('@anthropic-ai/sdk')
 const twilio = require('twilio')
 const { SYSTEM_PROMPT, TOOLS } = require('./knowledge')
+const { MEDICAL_TOPICS, buildMedicalSystemBlockForIds, buildClassifierSystemPrompt, detectMedicalTopics } = require('./medicalKnowledge')
 
 // Sin esto, un error no capturado en cualquier punto del código tumba el proceso con la
 // traza por defecto de Node, sin nada que lo distinga en los logs de un reinicio normal.
@@ -159,6 +160,31 @@ async function extractClientName(text) {
     return { result, usage: r.usage, model: r.model }
   } catch (err) {
     console.error('[lead] extracción de nombre falló:', err.message)
+    return { result: null, usage: null, model: null }
+  }
+}
+
+// Clasificador médico por IA (Haiku) — capa 2 de medicalKnowledge.js, solo se llama si
+// la capa 1 (palabras clave, ES/EN) no encontró nada. Hace falta porque el agente
+// atiende en cualquier idioma y una pregunta médica real puede venir implícita, sin
+// ninguna palabra de la lista. Devuelve { result, usage, model } — mismo motivo que
+// detectLangAI/extractClientName, ver comentario ahí. `result` es el id de categoría
+// (ver medicalKnowledge.js), "otra", o null si no es una pregunta médica.
+async function detectMedicalQuestionAI(text) {
+  try {
+    const r = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 16,
+      system: buildClassifierSystemPrompt(),
+      messages: [{ role: 'user', content: String(text).slice(0, 500) }],
+    })
+    const out = r.content.filter(c => c.type === 'text').map(c => c.text).join('').trim().toLowerCase().replace(/[.\s]+$/, '')
+    const validIds = new Set([...MEDICAL_TOPICS.map(t => t.id), 'otra'])
+    return { result: validIds.has(out) && out !== 'no' ? out : null, usage: r.usage, model: r.model }
+  } catch (err) {
+    console.error('[médico] clasificación IA falló:', err.message)
+    // Fallo silencioso → null: el filtro de palabras clave sigue siendo la red de
+    // seguridad mínima aunque esta llamada falle (nunca debe romper el turno).
     return { result: null, usage: null, model: null }
   }
 }
@@ -468,6 +494,21 @@ async function runAgentTurn(history, phone) {
   }
   if (lang) {
     system.push({ type: 'text', text: `⚠️ IDIOMA OBLIGATORIO DE ESTA RESPUESTA: el último mensaje del cliente está en ${lang}. Escribe tu respuesta ENTERA en ${lang}, sin ninguna excepción.` })
+  }
+
+  // Base de conocimiento médica (ver medicalKnowledge.js), en dos capas — igual que el
+  // idioma: capa 1 rápida y gratis (palabras clave ES/EN) primero; si no encuentra nada,
+  // capa 2 por IA (Haiku, cualquier idioma, preguntas implícitas) como red de seguridad.
+  // Código BASE, compartido con cualquier cliente futuro. Reutiliza `lastText`.
+  let medicalIds = detectMedicalTopics(lastText).map(t => t.id)
+  if (medicalIds.length === 0 && hasEnoughSignal) {
+    const m = await detectMedicalQuestionAI(lastText)
+    if (m.usage) costEvents.push(anthropicEvent('detect_medical', m.usage, m.model))
+    if (m.result) medicalIds = [m.result]
+  }
+  const medicalBlock = buildMedicalSystemBlockForIds(medicalIds)
+  if (medicalBlock) {
+    system.push({ type: 'text', text: medicalBlock })
   }
 
   // ── Registro del ENTRANTE + puerta de PAUSA (solo modo live) ───────────────────────────
