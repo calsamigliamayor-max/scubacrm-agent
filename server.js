@@ -361,6 +361,15 @@ async function runTool(name, input, phone) {
         console.log('[tool·live] request_modification →', status, data)
         return { ok: status < 300, live: true, backendStatus: status, ...data, ...input }
       }
+      if (name === 'add_booking_item') {
+        const { status, data } = await postJSON(`${BACKEND_URL}/api/webhook/booking/add-item`, {
+          clientName: input.clientName, clientPhone,
+          name: input.name, description: input.description || null,
+          unitPrice: input.unitPrice, qty: input.qty || 1,
+        })
+        console.log('[tool·live] add_booking_item →', status, data)
+        return { ok: status < 300, live: true, backendStatus: status, ...data, ...input }
+      }
       if (name === 'reopen_diver_waiver') {
         const { status, data } = await postJSON(`${BACKEND_URL}/api/webhook/booking/reopen-diver-waiver`, {
           clientName: input.clientName, clientPhone,
@@ -398,6 +407,10 @@ async function runTool(name, input, phone) {
   if (name === 'request_modification') {
     console.log('[tool] request_modification (SIMULADO):', input)
     return { ok: true, simulated: true, status: 'MODIFICATION_REQUESTED', ...input }
+  }
+  if (name === 'add_booking_item') {
+    console.log('[tool] add_booking_item (SIMULADO):', input)
+    return { ok: true, simulated: true, ...input }
   }
   if (name === 'reopen_diver_waiver') {
     console.log('[tool] reopen_diver_waiver (SIMULADO):', input)

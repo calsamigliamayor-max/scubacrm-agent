@@ -292,21 +292,24 @@ Los divemasters que llevan los fun dives hablan siempre en inglés. Si el client
 1. Vuelo a Cebú (CEB) — sirve cualquier hora del día.
 2. Cebú → Puerto de Maya: transfer privado, bus (4-6 h desde North Bus Terminal, ~350 PHP) o van (4-5 h, precio variable, más apretada).
    - El transfer privado es un servicio nuestro: trabajamos con una empresa de drivers de confianza. Si el cliente lo quiere, PREGÚNTALE para qué día lo necesita (puede ser un día distinto al de inicio del buceo, p. ej. llega a Cebú el 21 y empieza a bucear el 23). Precio orientativo *1.000 PHP*.
-     ⚠️ Corregido 19/09/2026 (bug real, reserva de Lewis Johannes: el cliente pidió el
-     transfer y create_booking BORRÓ el resto de la reserva —Open Water + tiburones—
-     dejando SOLO el transfer, porque una 2ª llamada a create_booking con service =
-     "Private Transfer (Cebu-Maya)" REEMPLAZA el service de la reserva entera, no lo
-     añade). Cómo registrarlo AHORA, según en qué punto estés:
+     ⚠️ Dos bugs reales seguidos por esto, ya corregidos — cómo registrarlo AHORA, según en
+     qué punto estés:
      - Si TODAVÍA no has llamado a create_booking para esta reserva (sigues negociando):
        súmalo a la MISMA reserva — añade su precio al totalPrice total, y añádelo como su
        propia línea en el resumen que confirma el cliente y en notes ("Private Transfer
        (Cebu-Maya): [fecha], 1,000 PHP"). Una única llamada a create_booking con TODO
-       junto, nunca dos.
+       junto, nunca dos (corregido 19/09/2026: una 2ª llamada a create_booking con
+       service="Private Transfer..." REEMPLAZA el service de la reserva entera, no lo
+       añade — caso Lewis Johannes, se quedó solo con el transfer, sin el Open Water ni los
+       tiburones).
      - Si la reserva de buceo YA EXISTE (ya llamaste a create_booking y el cliente ya
-       confirmó): NUNCA vuelvas a llamar a create_booking para añadir el transfer — eso es
-       justo lo que causó el bug. Usa request_modification (el mismo que usarías para
-       cualquier otro cambio sobre una reserva ya hecha), con 'change' describiendo el
-       transfer y su fecha — el centro lo añade a la factura sin tocar el resto.
+       confirmó): usa add_booking_item — NUNCA create_booking otra vez, y NUNCA
+       request_modification tampoco (corregido 20/09/2026: describir el transfer con
+       request_modification/newService tiene el MISMO problema que create_booking — en
+       todo el sistema "newService" significa "sustituye lo que había", no "añade esto" —
+       caso Patrick Vieira, se quedó solo con el transfer, sin el Thresher Shark Dive que
+       ya tenía facturado). add_booking_item es la única herramienta que SOLO añade, sin
+       tocar nada de lo ya reservado.
 3. Puerto de Maya → Malapascua: barco público cada ~30 min de 7:00 a 17:30, 200 PHP + 150 PHP de tasa ecológica de la isla (esto se paga aparte, en el propio puerto/barco — no entra en nuestra factura). Los barcos privados existen pero siguen el mismo horario que los públicos: si el cliente llega más tarde de las 17:30, SIEMPRE hay que hacer noche en Maya, no hay alternativa de barco privado fuera de horario.
 Ofrécele ayuda para organizar el TRANSFER (Cebú-Maya, el servicio nuestro del punto 2) — eso sí es proactivo.
 
@@ -564,6 +567,21 @@ const TOOLS = [
         removeDayDate:    { type: 'string',  description: 'Fecha (YYYY-MM-DD) del día que se quiere quitar. OBLIGATORIO junto con removeDayIndex: el centro comprueba que ambos cuadren para no dar de baja el día equivocado.' },
       },
       required: ['clientName', 'change'],
+    },
+  },
+  {
+    name: 'add_booking_item',
+    description: 'Añade un extra de pago a una reserva YA EXISTENTE — transfer Cebú-Maya, u otro servicio adicional con precio propio — SUMÁNDOLO a lo que ya tiene reservado. Se aplica DIRECTO, sin pasar por el manager (es un precio conocido, no una decisión de negocio). ⚠️ NUNCA uses request_modification ni create_booking para esto: los dos tratan lo que mandes como si SUSTITUYERA la reserva entera (bug real, reserva de Patrick Vieira, 20/09/2026: describir el transfer con request_modification borró el Thresher Shark Dive que ya tenía). Esta herramienta es la ÚNICA forma segura de añadir algo encima sin tocar el resto.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        clientName:  { type: 'string', description: 'Nombre del cliente/titular de la reserva' },
+        name:        { type: 'string', description: 'Nombre del extra tal y como debe salir en la factura, ej. "Private Transfer (Cebu-Maya)".' },
+        description: { type: 'string', description: 'Detalle breve para la factura, ej. la fecha exacta del transfer si es distinta a la del buceo.' },
+        unitPrice:   { type: 'number', description: 'Precio del extra, el orientativo del catálogo (ej. 1.000 PHP el transfer), salvo que el centro haya dado uno distinto.' },
+        qty:         { type: 'integer', description: 'Cantidad. Por defecto 1 — súbelo solo si el cliente pide varias unidades del mismo extra (ej. 2 transfers en días distintos se registran como 2 llamadas separadas, no con qty).' },
+      },
+      required: ['clientName', 'name', 'unitPrice'],
     },
   },
   {
