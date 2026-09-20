@@ -5,6 +5,7 @@ const crypto = require('crypto')
 const Anthropic = require('@anthropic-ai/sdk')
 const twilio = require('twilio')
 const { SYSTEM_PROMPT, TOOLS } = require('./knowledge')
+const { fixCurrency, CENTER_CURRENCY } = require('./fixCurrency')
 const { MEDICAL_TOPICS, buildMedicalSystemBlockForIds, buildClassifierSystemPrompt, detectMedicalTopics } = require('./medicalKnowledge')
 
 // Sin esto, un error no capturado en cualquier punto del código tumba el proceso con la
@@ -304,7 +305,7 @@ async function runTool(name, input, phone) {
           (Array.isArray(input.rentalItems) && input.rentalItems.length > 0)
             ? `Loose rental items: ${input.rentalItems.map(r => `${r.key} (${r.rate})`).join(', ')}`
             : null,
-          input.totalPrice ? `Total: ${Number(input.totalPrice).toLocaleString()} PHP` : null,
+          input.totalPrice ? `Total: ${Number(input.totalPrice).toLocaleString()} ${CENTER_CURRENCY.code}` : null,
         ].filter(Boolean).join('\n')
         // Mandamos los datos YA estructurados: el CRM se fía de ellos y no tiene que readivinar.
         const { status, data } = await postJSON(`${BACKEND_URL}/api/webhook/booking`, {
@@ -313,7 +314,7 @@ async function runTool(name, input, phone) {
           activityDate: input.activityDate,
           numPeople: input.numPeople,
           certification: input.certification,
-          notes: input.notes || null,
+          notes: fixCurrency(input.notes) || null,
           totalPrice: input.totalPrice || null,
           // El modelo sí lo pregunta y lo rellena, pero no se estaba reenviando: llegaba al
           // CRM solo dentro del texto de las notas, y la factura salía sin la línea de
@@ -326,7 +327,9 @@ async function runTool(name, input, phone) {
           // Desglose día a día de un pack a medida (opcional — solo lo manda el modelo
           // para "Personalized dive pack"). El backend valida su forma por su cuenta
           // y lo descarta sin romper la reserva si viene mal formado.
-          days: Array.isArray(input.days) ? input.days : null,
+          days: Array.isArray(input.days)
+            ? input.days.map(d => ({ ...d, siteNote: fixCurrency(d.siteNote) }))
+            : null,
         })
         console.log('[tool·live] create_booking →', status, data)
         return { ok: status < 300, live: true, backendStatus: status, ...data, ...input }
@@ -413,8 +416,8 @@ async function runTool(name, input, phone) {
     return {
       ok: true, simulated: true, ...input,
       amountPaid: 4250, total: 8500, depositRequired: 4250, balanceDue: 4250,
-      amountPaidFormatted: '₱ 4,250', totalFormatted: '₱ 8,500',
-      depositRequiredFormatted: '₱ 4,250', balanceDueFormatted: '₱ 4,250',
+      amountPaidFormatted: `${CENTER_CURRENCY.symbol} 4,250`, totalFormatted: `${CENTER_CURRENCY.symbol} 8,500`,
+      depositRequiredFormatted: `${CENTER_CURRENCY.symbol} 4,250`, balanceDueFormatted: `${CENTER_CURRENCY.symbol} 4,250`,
     }
   }
   return { ok: false, error: `Herramienta desconocida: ${name}` }
