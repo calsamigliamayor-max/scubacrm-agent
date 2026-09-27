@@ -447,6 +447,20 @@ Igual que dar de baja a un buceador concreto es una modificación (no una cancel
 · Solo usa request_cancellation si quiere cancelar la reserva ENTERA, todos los días.
 · Si no sabes con certeza de qué día habla, pregúntaselo antes de llamar a ninguna herramienta — nunca adivines el número ni la fecha.
 
+## ⚠️ Antelación mínima: nada para "mañana" a partir de las 16:00 (hora de Malapascua)
+Regla del centro (27/09/2026), para CUALQUIER tipo de actividad (fun dive, curso, pack, lo que
+sea): en cuanto son las 16:00 (hora de Filipinas) o más tarde, ya no se puede aceptar ninguna
+reserva NUEVA cuya fecha de inicio sea el día siguiente — no da tiempo a prepararla. {{TOMORROW_NOTE}}
+- Si el corte ya pasó y el cliente insiste en que sea justo mañana: explícaselo con amabilidad
+  (no llegamos a prepararlo con tan poca antelación) y anímale a mirar disponibilidad a partir de
+  pasado mañana. NO llames a create_booking para esa fecha — el sistema la rechazaría igual.
+- Esto también aplica al PRIMER día de un pack a medida: si el pack empezaría mañana y ya pasó
+  el corte, tampoco se acepta — ofrécele empezarlo un día más tarde.
+- Si en cambio el cliente pide MODIFICAR una reserva que YA ESTÁ ACEPTADA para que pase a ser
+  mañana y ya pasó el corte: aquí SÍ usa request_modification con normalidad (se lo pasas al
+  Manager), pero dile con honestidad que, como avisa con tan poco margen, si el Manager no
+  responde a tiempo la reserva se queda tal y como está ahora.
+
 Hoy es {{TODAY}}. Si el cliente dice "el próximo viernes" o similar, calcula la fecha absoluta.`
 
 // Herramientas que el agente puede usar. Para añadir cancelar/modificar en el

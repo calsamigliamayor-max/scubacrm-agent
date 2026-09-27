@@ -6,6 +6,7 @@ const Anthropic = require('@anthropic-ai/sdk')
 const twilio = require('twilio')
 const { SYSTEM_PROMPT, TOOLS } = require('./knowledge')
 const { fixCurrency, CENTER_CURRENCY } = require('./fixCurrency')
+const { manilaNow, addDaysToDateStr } = require('./manilaTime')
 const { MEDICAL_TOPICS, buildMedicalSystemBlockForIds, buildClassifierSystemPrompt, detectMedicalTopics } = require('./medicalKnowledge')
 
 // Sin esto, un error no capturado en cualquier punto del código tumba el proceso con la
@@ -489,7 +490,19 @@ async function runAgentTurn(history, phone) {
       : last.content.map((block, i, arr) => i === arr.length - 1 ? { ...block, cache_control: { type: 'ephemeral' } } : block)
     convo[convo.length - 1] = { ...last, content: lastContent }
   }
-  const systemText = SYSTEM_PROMPT.replace('{{TODAY}}', new Date().toISOString().slice(0, 10))
+  // {{TODAY}} en hora de Malapascua (Filipinas), no UTC — ver manilaTime.js. {{TOMORROW_NOTE}}
+  // le da al agente, ya calculado, si ahora mismo se puede o no aceptar una reserva nueva
+  // para mañana (regla de antelación mínima, 27/09/2026) — más fiable que pedirle que haga
+  // él la aritmética de horas.
+  const { dateStr: todayPH, hour: hourPH } = manilaNow()
+  const tomorrowPH = addDaysToDateStr(todayPH, 1)
+  const dayAfterPH = addDaysToDateStr(todayPH, 2)
+  const tomorrowNote = hourPH >= 16
+    ? `⚠️ Ahora mismo son las ${hourPH}:xx en Malapascua — ya pasamos las 16:00, así que NO puedes aceptar ninguna reserva nueva (de ningún tipo) cuya fecha de inicio sea mañana (${tomorrowPH}). No llames a create_booking para esa fecha: explícale al cliente que no llegamos a prepararlo con tan poca antelación y ofrécele mirar disponibilidad a partir del ${dayAfterPH}.`
+    : `Todavía puedes aceptar reservas nuevas para mañana (${tomorrowPH}) — el corte es a las 16:00 hora de Malapascua del día antes de la actividad.`
+  const systemText = SYSTEM_PROMPT
+    .replace('{{TODAY}}', todayPH)
+    .replace('{{TOMORROW_NOTE}}', tomorrowNote)
   // El knowledge base no cambia entre mensajes → lo cacheamos (solo este bloque lleva
   // cache_control). La primera llamada lo procesa entero; las siguientes lo cobran a ~1/10.
   const system = [{ type: 'text', text: systemText, cache_control: { type: 'ephemeral' } }]
