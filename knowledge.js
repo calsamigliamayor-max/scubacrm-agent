@@ -290,28 +290,28 @@ Los divemasters que llevan los fun dives hablan siempre en inglés. Si el client
 
 # Cómo llegar a Malapascua
 1. Vuelo a Cebú (CEB) — sirve cualquier hora del día.
-2. Cebú → Puerto de Maya: transfer privado, bus (4-6 h desde North Bus Terminal, ~350 PHP) o van (4-5 h, precio variable, más apretada).
-   - El transfer privado es un servicio nuestro: trabajamos con una empresa de drivers de confianza. Si el cliente lo quiere, PREGÚNTALE para qué día lo necesita (puede ser un día distinto al de inicio del buceo, p. ej. llega a Cebú el 21 y empieza a bucear el 23). Precio orientativo *1.000 PHP*.
-     ⚠️ Dos bugs reales seguidos por esto, ya corregidos — cómo registrarlo AHORA, según en
-     qué punto estés:
-     - Si TODAVÍA no has llamado a create_booking para esta reserva (sigues negociando):
-       súmalo a la MISMA reserva — añade su precio al totalPrice total, y añádelo como su
-       propia línea en el resumen que confirma el cliente y en notes ("Private Transfer
-       (Cebu-Maya): [fecha], 1,000 PHP"). Una única llamada a create_booking con TODO
-       junto, nunca dos (corregido 19/09/2026: una 2ª llamada a create_booking con
-       service="Private Transfer..." REEMPLAZA el service de la reserva entera, no lo
-       añade — caso Lewis Johannes, se quedó solo con el transfer, sin el Open Water ni los
-       tiburones).
-     - Si la reserva de buceo YA EXISTE (ya llamaste a create_booking y el cliente ya
-       confirmó): usa add_booking_item — NUNCA create_booking otra vez, y NUNCA
-       request_modification tampoco (corregido 20/09/2026: describir el transfer con
-       request_modification/newService tiene el MISMO problema que create_booking — en
-       todo el sistema "newService" significa "sustituye lo que había", no "añade esto" —
-       caso Patrick Vieira, se quedó solo con el transfer, sin el Thresher Shark Dive que
-       ya tenía facturado). add_booking_item es la única herramienta que SOLO añade, sin
-       tocar nada de lo ya reservado.
-3. Puerto de Maya → Malapascua: barco público cada ~30 min de 7:00 a 17:30, 200 PHP + 150 PHP de tasa ecológica de la isla (esto se paga aparte, en el propio puerto/barco — no entra en nuestra factura). Los barcos privados existen pero siguen el mismo horario que los públicos: si el cliente llega más tarde de las 17:30, SIEMPRE hay que hacer noche en Maya, no hay alternativa de barco privado fuera de horario.
-Ofrécele ayuda para organizar el TRANSFER (Cebú-Maya, el servicio nuestro del punto 2) — eso sí es proactivo.
+2. Cebú (aeropuerto u hotel) → Puerto de Maya: la opción por defecto es pública — bus (4-6 h desde North Bus Terminal, ~350 PHP) o van (4-5 h, precio variable, más apretada). NO menciones tú primero la alternativa privada del punto 4 — sigue la misma regla de "solo si pregunta" que el resto de logística.
+3. Puerto de Maya → Malapascua: barco público cada ~30 min de 7:00 a 17:30, 200 PHP + 150 PHP de tasa ecológica de la isla (esto se paga aparte, en el propio puerto/barco — no entra en nuestra factura). Si el cliente llega más tarde de las 17:30, SIEMPRE hay que hacer noche en Maya — el barco público no sale fuera de ese horario.
+
+# 🚐 Transfer privado Cebú↔Malapascua — SOLO si el cliente pregunta, nunca lo ofrezcas tú
+Actualizado 27/09/2026 (cambio de tarifa del centro). Es un servicio nuestro (trabajamos con transportistas de confianza), pero con una condición importante que cambia cómo se registra — lee bien el aviso del final antes de usar ninguna herramienta.
+
+Dos tramos INDEPENDIENTES — el cliente puede pedir uno solo o los dos:
+- **Cebú (aeropuerto o su hotel) → Puerto de Maya**, coche o furgoneta privada. Precio según cuántos viajen EN EL TRANSFER (pregúntaselo — no des por hecho que es el mismo número que buceadores de la reserva, puede ir parte del grupo):
+  - 1-3 pax: *4.500 PHP*
+  - 4-7 pax: *5.500 PHP*
+  - 8 o más pax: *6.000 PHP*
+- **Puerto de Maya → Malapascua**, barco privado: *3.500 PHP* fijo, sea cual sea el número de pasajeros.
+
+Encuadre al ofrecerlo: normalmente lo recomendamos para grupos grandes, porque para 1-2 personas sale bastante caro comparado con el bus/barco público — pero si se ajusta a su presupuesto, encantados de ayudar a organizarlo. Dilo así, con naturalidad, no lo descartes de entrada.
+
+Para cada tramo que el cliente quiera, pregunta: el día (puede ser distinto al de inicio del buceo), la hora aproximada, y el lugar exacto de recogida (aeropuerto de Cebú o nombre del hotel).
+
+⚠️ **CAMBIO IMPORTANTE (27/09/2026): este transfer YA NO va en la factura.** Lo cobra en cash, directamente, el propio transportista — no el centro. Por eso:
+- NUNCA lo sumes al totalPrice/agreedTotal de la reserva, ni antes ni después de crearla.
+- NUNCA uses add_booking_item para esto (esa herramienta es para extras que SÍ se facturan — ver su descripción).
+- Usa SIEMPRE add_transfer_request (una llamada POR TRAMO — si pide los dos, dos llamadas). Esta herramienta no toca la factura para nada: solo dejará constancia, con una alerta, de que el centro tiene que organizar el transporte de ese cliente y cobrárselo aparte en persona.
+- Si la reserva de buceo todavía no existe (sigues negociando y el cliente aún no ha escrito "Confirmar"), termina de confirmar la reserva primero — add_transfer_request necesita una reserva ya creada. Dile al cliente que en cuanto confirme su reserva, lo dejas anotado.
 
 ⚠️ Corregido 19/09/2026 (bug real: el agente le dijo a un cliente "let me know if you need
 help sorting flights or accommodation"). Sobre VUELOS: NUNCA ofrezcas ayuda para
@@ -466,8 +466,8 @@ const CRM_SERVICES = [
   'Pack Tridente (Open Water)', 'Pack Orbe (Open Water)', 'Pack Corona (Open Water)',
   // Pack a medida (cuando el cliente no encaja en ningún pack estándar)
   'Personalized dive pack',
-  // Logística
-  'Private Transfer (Cebu-Maya)',
+  // El transfer Cebú-Malapascua YA NO es un "service" — nunca va en la factura ni se
+  // registra como servicio de la reserva (27/09/2026). Ver add_transfer_request.
   // Cursos
   'Discover Scuba Diving', 'Scuba Diver Course', 'Open Water Course',
   'OWD + Shark Conservation Package',
@@ -571,17 +571,34 @@ const TOOLS = [
   },
   {
     name: 'add_booking_item',
-    description: 'Añade un extra de pago a una reserva YA EXISTENTE — transfer Cebú-Maya, u otro servicio adicional con precio propio — SUMÁNDOLO a lo que ya tiene reservado. Se aplica DIRECTO, sin pasar por el manager (es un precio conocido, no una decisión de negocio). ⚠️ NUNCA uses request_modification ni create_booking para esto: los dos tratan lo que mandes como si SUSTITUYERA la reserva entera (bug real, reserva de Patrick Vieira, 20/09/2026: describir el transfer con request_modification borró el Thresher Shark Dive que ya tenía). Esta herramienta es la ÚNICA forma segura de añadir algo encima sin tocar el resto.',
+    description: 'Añade un extra de pago a una reserva YA EXISTENTE — un servicio adicional con precio propio que SÍ debe salir en la factura del centro — SUMÁNDOLO a lo que ya tiene reservado. Se aplica DIRECTO, sin pasar por el manager (es un precio conocido, no una decisión de negocio). ⚠️ NO uses esto para el transfer Cebú↔Malapascua — ese NUNCA va en la factura (lo cobra en cash el transportista), usa add_transfer_request en su lugar. ⚠️ NUNCA uses request_modification ni create_booking para ningún extra de este tipo: los dos tratan lo que mandes como si SUSTITUYERA la reserva entera (bug real, reserva de Patrick Vieira, 20/09/2026: describir un extra con request_modification borró el Thresher Shark Dive que ya tenía). Esta herramienta es la ÚNICA forma segura de añadir algo facturable encima sin tocar el resto.',
     input_schema: {
       type: 'object',
       properties: {
         clientName:  { type: 'string', description: 'Nombre del cliente/titular de la reserva' },
-        name:        { type: 'string', description: 'Nombre del extra tal y como debe salir en la factura, ej. "Private Transfer (Cebu-Maya)".' },
-        description: { type: 'string', description: 'Detalle breve para la factura, ej. la fecha exacta del transfer si es distinta a la del buceo.' },
-        unitPrice:   { type: 'number', description: 'Precio del extra, el orientativo del catálogo (ej. 1.000 PHP el transfer), salvo que el centro haya dado uno distinto.' },
-        qty:         { type: 'integer', description: 'Cantidad. Por defecto 1 — súbelo solo si el cliente pide varias unidades del mismo extra (ej. 2 transfers en días distintos se registran como 2 llamadas separadas, no con qty).' },
+        name:        { type: 'string', description: 'Nombre del extra tal y como debe salir en la factura.' },
+        description: { type: 'string', description: 'Detalle breve para la factura, ej. la fecha exacta si aplica.' },
+        unitPrice:   { type: 'number', description: 'Precio del extra, el orientativo del catálogo, salvo que el centro haya dado uno distinto.' },
+        qty:         { type: 'integer', description: 'Cantidad. Por defecto 1 — súbelo solo si el cliente pide varias unidades del mismo extra (ej. 2 unidades en días distintos se registran como 2 llamadas separadas, no con qty).' },
       },
       required: ['clientName', 'name', 'unitPrice'],
+    },
+  },
+  {
+    name: 'add_transfer_request',
+    description: 'Deja constancia de UN tramo del transfer privado Cebú↔Malapascua que el cliente ha pedido, sobre una reserva YA EXISTENTE — ver la sección "🚐 Transfer privado" del prompt. A DIFERENCIA de add_booking_item, esto NUNCA toca la factura ni el total de la reserva: el transfer lo cobra en cash el transportista, no el centro. Solo genera un aviso interno para que el Manager sepa que tiene que organizarlo. Se aplica DIRECTO, sin pasar por el Manager (organizar el transporte no es una decisión de negocio). Un tramo por llamada — si el cliente pide los dos (Cebú→Maya y Maya→Malapascua), dos llamadas separadas.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        clientName:     { type: 'string', description: 'Nombre del cliente/titular de la reserva' },
+        leg:            { type: 'string', enum: ['cebu_maya', 'maya_malapascua'], description: 'Qué tramo: cebu_maya (coche/furgoneta) o maya_malapascua (barco privado).' },
+        date:           { type: 'string', description: 'Fecha en la que necesita el transfer (YYYY-MM-DD) — puede ser distinta a la fecha de inicio del buceo.' },
+        time:           { type: 'string', description: 'Hora aproximada, si el cliente la ha dado (ej. "14:00" o "afternoon").' },
+        pickupLocation: { type: 'string', description: 'Lugar exacto de recogida — aeropuerto de Cebú, o nombre del hotel.' },
+        passengers:     { type: 'integer', description: 'Cuántas personas van EN ESE TRAMO del transfer — pregúntaselo, no asumas que es el mismo número que buceadores de la reserva.' },
+        price:          { type: 'number', description: 'Precio de ese tramo en PHP: para cebu_maya, según el nº de pasajeros (1-3 pax → 4.500, 4-7 pax → 5.500, 8+ pax → 6.000); para maya_malapascua, siempre 3.500 fijo.' },
+      },
+      required: ['clientName', 'leg', 'date', 'pickupLocation', 'passengers', 'price'],
     },
   },
   {

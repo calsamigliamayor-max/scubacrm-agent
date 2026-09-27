@@ -60,11 +60,15 @@ quede visible en el cost-panel pero separado de las conversaciones reales de cli
 - Cualquier cosa que el agente traslade para que la revise una persona (cancelación,
   modificación, un caso que no sabe resolver) se habla siempre en términos de "el Manager",
   nunca de "el centro" como entidad externa.
-- Un extra de pago que se AÑADE a una reserva ya existente (un transfer, una pieza de
-  equipo) nunca debe pasar por `create_booking` otra vez ni por `request_modification`
-  describiéndolo como el nuevo servicio — las dos rutas SUSTITUYEN lo que ya había en vez
-  de añadir. Usar una herramienta pensada para sumar (p. ej. `add_booking_item`), que solo
-  añade una línea a la factura sin tocar el resto.
+- Un extra de pago que se AÑADE a una reserva ya existente (una pieza de equipo, un
+  servicio adicional facturable) nunca debe pasar por `create_booking` otra vez ni por
+  `request_modification` describiéndolo como el nuevo servicio — las dos rutas SUSTITUYEN
+  lo que ya había en vez de añadir. Usar una herramienta pensada para sumar
+  (`add_booking_item`), que solo añade una línea a la factura sin tocar el resto.
+- El transfer privado Cebú↔Malapascua es la EXCEPCIÓN a lo anterior (27/09/2026): NUNCA va
+  a la factura (lo cobra en cash el transportista, no el centro), así que usa su propia
+  herramienta separada (`add_transfer_request`), que no toca ni agreedTotal ni ningún
+  InvoiceItem — solo deja un aviso interno para que el Manager lo organice.
 
 ## ⚠️ Riesgo conocido, sin resolver: el playground está público
 
