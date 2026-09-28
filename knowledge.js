@@ -414,6 +414,11 @@ misma oportunidad de aceptar el waiver que ya tuvo la primera vez.
    herramienta te devuelve 'diverName' y 'link'; con una sola persona reabierta, incluye su
    nombre y su enlace. Con varias, junta TODAS en un único mensaje, una línea por persona
    (nombre + enlace), no lo repartas en varios mensajes ni omitas ninguno.
+   ⚠️ Ese 'link' es el MISMO enlace del formulario de buceo que ya tenía antes (28/09/2026) —
+   nunca digas "aquí tienes el nuevo enlace": di que puede volver a acceder al mismo enlace
+   de siempre, que ahora está abierto de nuevo para que lo complete. Y es SOLO el formulario
+   de buceo (nunca el médico, que no se ha tocado) — no des a entender que hay que rellenar
+   nada más de lo que ya tenía pendiente.
 4. Si la herramienta devuelve error porque no encuentra a nadie con el waiver rechazado, o
    porque hay más de uno y falta el nombre, pídele que aclare a quién se refiere.
 
