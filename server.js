@@ -737,7 +737,10 @@ app.post('/chat', requirePlaygroundAuth, async (req, res) => {
     }
     const history = Array.isArray(req.body.messages) ? req.body.messages : []
     const phone = req.body.phone || DEMO_PHONE   // teléfono del perfil activo
-    const { reply, toolCalls, paused } = await runAgentTurn(history, phone)
+    // Mismo candado por teléfono que el WhatsApp real (ver runSerialized): AGENT_MODE=live es
+    // compartido entre el playground y el webhook real, así que si alguien prueba aquí con el
+    // número de un cliente que a la vez escribe de verdad, no deben correr dos turnos a la vez.
+    const { reply, toolCalls, paused } = await runSerialized(phone, () => runAgentTurn(history, phone))
     res.json({ reply, toolCalls, paused })
   } catch (err) {
     console.error('[agent] Error:', err.message)
@@ -950,6 +953,32 @@ const AGENT_REPLY_DELAY_MS    = Number(process.env.AGENT_REPLY_DELAY_MS ?? 12000
 const AGENT_REPLY_MAX_WAIT_MS = Number(process.env.AGENT_REPLY_MAX_WAIT_MS ?? 45000)
 const pendingByPhone = new Map()   // phone -> { messages: string[], timer, firstAt }
 
+// ─── Candado por teléfono: nunca dos turnos del agente en paralelo para el mismo cliente ──
+// Bug real (28/09/2026): si el cliente escribe de nuevo MIENTRAS el turno anterior sigue
+// "pensando" (hasta AGENT_MAX_STEPS pasos, cada uno con una llamada real a Claude — fácilmente
+// 15-40s), pendingByPhone.delete() de más arriba ya ha soltado la entrada anterior, así que el
+// nuevo mensaje arranca un SEGUNDO runAgentTurn en paralelo con el primero. El chequeo
+// "anti-duplicados" del backend (findActiveBookingByPhone, webhook.js) es un SELECT sin
+// bloqueo — si los dos turnos deciden ambos crear la reserva (típico: cliente impaciente que
+// repite "confirmo"), los dos pasan el chequeo antes de que ninguno haya insertado, y salen
+// DOS reservas activas para la misma persona. Mismo riesgo si alguien prueba en el playground
+// (/chat) con el número de un cliente que a la vez escribe de verdad por WhatsApp — comparten
+// AGENT_MODE=live (ver CLAUDE.md, riesgo ya documentado) y por tanto el mismo camino de
+// creación de reservas.
+//
+// runSerialized() encola por teléfono: un turno nuevo para el MISMO número espera a que el
+// anterior termine antes de arrancar (en vez de correr en paralelo), pero teléfonos distintos
+// siguen sin bloquearse entre sí — no se convierte el servidor en secuencial de golpe, solo la
+// conversación de una misma persona. Si el turno anterior falló, el siguiente arranca igual
+// (nunca se queda la cola colgada de una promesa rechazada).
+const inFlightByPhone = new Map()   // phone -> Promise (se resuelve cuando el turno en curso termina)
+function runSerialized(phone, task) {
+  const previous = inFlightByPhone.get(phone) || Promise.resolve()
+  const run = previous.then(task, task)
+  inFlightByPhone.set(phone, run.then(() => {}, () => {}))
+  return run
+}
+
 function bufferIncomingMessage(phone, from, body) {
   let pending = pendingByPhone.get(phone)
   if (!pending) {
@@ -970,23 +999,30 @@ async function flushPendingMessages(phone, from) {
   pendingByPhone.delete(phone)
   const body = pending.messages.join('\n')
 
-  try {
-    const history = await fetchLeadHistory(phone)
-    history.push({ role: 'user', content: body })
-    const { reply, paused } = await runAgentTurn(history, phone)
-    if (reply && !paused) {
-      const msg = await twilioClient.messages.create({
-        from: `whatsapp:${TWILIO_WHATSAPP_NUMBER}`,
-        to: from,
-        body: reply,
-      })
-      // Este envío es la "voz" del agente, no un recordatorio automático del CRM — va
-      // como 'sales' igual que las llamadas a Anthropic de este mismo turno.
-      postCostEvents([{ pipeline: 'whatsapp', bucket: HAMMERZ_COST_BUCKET, twilioSid: msg?.sid || null, whatsappDirection: 'outbound' }])
+  // Serializado por teléfono (ver runSerialized más arriba): si ya hay un turno en marcha
+  // para este mismo número, este espera a que termine antes de arrancar — nunca en paralelo.
+  await runSerialized(phone, async () => {
+    try {
+      // fetchLeadHistory se llama AQUÍ DENTRO, no antes de encolar — así, si había un turno
+      // anterior en marcha, este ve el historial YA actualizado con lo que ese turno acabó de
+      // escribir, en vez de una foto vieja tomada antes de que terminara.
+      const history = await fetchLeadHistory(phone)
+      history.push({ role: 'user', content: body })
+      const { reply, paused } = await runAgentTurn(history, phone)
+      if (reply && !paused) {
+        const msg = await twilioClient.messages.create({
+          from: `whatsapp:${TWILIO_WHATSAPP_NUMBER}`,
+          to: from,
+          body: reply,
+        })
+        // Este envío es la "voz" del agente, no un recordatorio automático del CRM — va
+        // como 'sales' igual que las llamadas a Anthropic de este mismo turno.
+        postCostEvents([{ pipeline: 'whatsapp', bucket: HAMMERZ_COST_BUCKET, twilioSid: msg?.sid || null, whatsappDirection: 'outbound' }])
+      }
+    } catch (err) {
+      console.error('[whatsapp] Error procesando mensaje entrante:', err.message)
     }
-  } catch (err) {
-    console.error('[whatsapp] Error procesando mensaje entrante:', err.message)
-  }
+  })
 }
 
 // Registrado AL FINAL a propósito: /webhook/whatsapp y /api/health ya han sido atendidos
