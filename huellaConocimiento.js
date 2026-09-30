@@ -23,6 +23,7 @@
 // aviso gritaría todas las mañanas.
 const { createHash } = require('crypto')
 const { SYSTEM_PROMPT } = require('./knowledge')
+const { MEDICAL_TOPICS } = require('./medicalKnowledge')
 
 const HAMMERZ_ERP_URL = process.env.HAMMERZ_ERP_URL || ''
 const HAMMERZ_HUELLA_SECRET = process.env.HAMMERZ_HUELLA_SECRET || ''
@@ -30,6 +31,30 @@ const HAMMERZ_CLIENT_SLUG = process.env.HAMMERZ_CLIENT_SLUG || ''
 
 function huellaDelPrompt() {
   return createHash('sha256').update(SYSTEM_PROMPT, 'utf8').digest('hex')
+}
+
+// La base médica va en dirección CONTRARIA a todo lo demás, y por eso se manda aparte: la posee el
+// ERP y este repo solo tiene una copia exportada. Así que esta huella no sirve para detectar que el
+// ERP esté atrasado, sino que lo está este repo — y al ser la única base con contenido clínico, es
+// la que menos puede divergir en silencio.
+//
+// Se hashea el CONTENIDO, no el fichero. Un hash del .js no valdría: la exportación del ERP
+// normaliza el formato a conciencia, así que el fichero de aquí y el que generaría el ERP nunca
+// coinciden carácter a carácter aunque digan exactamente lo mismo. Lo que importa es lo que llega
+// al modelo, y eso son estos cuatro campos. Las palabras clave se ordenan porque reordenarlas no
+// cambia lo que detecta el clasificador, así que no puede encender un aviso.
+//
+// El orden de los campos y de los temas tiene que coincidir EXACTAMENTE con
+// huellaContenidoMedico() en el ERP (src/lib/huella-conocimiento.ts) — es un contrato entre los dos
+// repos, no un detalle de implementación.
+function huellaDeLaMedica() {
+  const proyeccion = MEDICAL_TOPICS.map((t) => ({
+    id: t.id,
+    label: t.label,
+    keywords: [...t.keywords].sort(),
+    info: t.info,
+  }))
+  return createHash('sha256').update(JSON.stringify(proyeccion), 'utf8').digest('hex')
 }
 
 // Mismo contrato que el resto de avisos a Hammerz: si falta configuración no hace nada, y cualquier
@@ -50,6 +75,7 @@ async function publicarHuellaConocimiento() {
         repo: 'scubacrm-agent',
         commit: process.env.RAILWAY_GIT_COMMIT_SHA || null,
         knowledgeFingerprint: huellaDelPrompt(),
+        medicalFingerprint: huellaDeLaMedica(),
       }),
     })
     if (!res.ok) {
@@ -67,4 +93,15 @@ async function publicarHuellaConocimiento() {
   }
 }
 
-module.exports = { publicarHuellaConocimiento, huellaDelPrompt }
+// Avisar solo al arrancar deja abierto justo el agujero que esto viene a tapar: si el empuje deja
+// de funcionar, la fecha del último aviso se congela en el ERP mientras aquí el prompt sigue
+// cambiando, y su pantalla seguiría diciendo "al día". Repitiéndolo cada 12 horas, esa fecha
+// significa algo y el ERP puede dejar de afirmar lo que no sabe. Una petición HTTP, sin coste de API.
+const LATIDO_MS = 12 * 60 * 60 * 1000
+
+function arrancarLatidoHuella() {
+  publicarHuellaConocimiento()
+  return setInterval(publicarHuellaConocimiento, LATIDO_MS)
+}
+
+module.exports = { publicarHuellaConocimiento, arrancarLatidoHuella, huellaDelPrompt, huellaDeLaMedica }

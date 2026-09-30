@@ -8,7 +8,7 @@ const { SYSTEM_PROMPT, TOOLS } = require('./knowledge')
 const { fixCurrency, CENTER_CURRENCY } = require('./fixCurrency')
 const { manilaNow, addDaysToDateStr } = require('./manilaTime')
 const { MEDICAL_TOPICS, buildMedicalSystemBlockForIds, buildClassifierSystemPrompt, detectMedicalTopics } = require('./medicalKnowledge')
-const { publicarHuellaConocimiento } = require('./huellaConocimiento')
+const { arrancarLatidoHuella } = require('./huellaConocimiento')
 
 // Sin esto, un error no capturado en cualquier punto del código tumba el proceso con la
 // traza por defecto de Node, sin nada que lo distinga en los logs de un reinicio normal.
@@ -1045,8 +1045,10 @@ app.listen(PORT, () => {
   } else {
     console.log('')
   }
-  // Avisa al ERP de Hammerz de qué base de conocimiento lleva esta versión desplegada, para que su
-  // copia no pueda quedarse desactualizada en silencio (ver huellaConocimiento.js). Va en el
-  // arranque porque es el momento en que "lo desplegado" cambia. Sin `await` y sin poder lanzar.
-  publicarHuellaConocimiento()
+  // Avisa al ERP de Hammerz de qué conocimiento lleva esta versión desplegada, para que su copia no
+  // pueda quedarse desactualizada en silencio (ver huellaConocimiento.js). Al arrancar, que es
+  // cuando "lo desplegado" cambia, y luego cada 12h: sin ese latido, un empuje que dejara de
+  // funcionar congelaría la fecha en el ERP y su pantalla seguiría diciendo "al día". Sin `await` y
+  // sin poder lanzar.
+  arrancarLatidoHuella()
 })
