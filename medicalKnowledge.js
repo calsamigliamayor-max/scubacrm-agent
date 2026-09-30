@@ -40,22 +40,34 @@ const MEDICAL_TOPICS = [
   {
     id: 'cardio_resp', // Cuadro A: pulmones/respiración, corazón, sangre
     label: 'corazón, pulmones, asma, sangre, presión arterial',
+    // Incluye los factores de riesgo del Cuadro B (colesterol, tabaco, antecedentes familiares)
+    // porque es este texto el que los responde, no el del tema de edad. "fumar" en infinitivo
+    // se queda fuera a propósito: en un centro de buceo "¿se puede fumar en el barco?" es una
+    // pregunta real y no médica. "fumo" y "fumador" sí son contexto de salud.
     keywords: [
       'asma', 'asthma', 'epoc', 'copd', 'corazón', 'heart', 'cardiac', 'cardiovascular',
       'arritmia', 'arrhythmia', 'presión arterial', 'blood pressure', 'hipertensión',
-      'hypertension', 'anemia', 'sangre', 'blood disorder', 'pulmones', 'lungs',
-      'respirar', 'breathing problem', 'neumotórax', 'pneumothorax',
+      'hypertension', 'anemia', 'sangre', 'blood disorder', 'pulmones', 'lungs', 'respirar',
+      'breathing problem', 'neumotórax', 'pneumothorax', 'colesterol', 'cholesterol',
+      'fumo', 'fumador', 'fumadora', 'smoker', 'smoking', 'tabaco', 'tobacco', 'nicotina',
+      'nicotine', 'antecedentes familiares', 'family history', 'muerte súbita',
+      'sudden death',
     ],
     info: `Las condiciones de corazón, pulmones o sangre son de las que más importan en buceo, porque bucear exige un sistema cardiorrespiratorio capaz de responder bien al esfuerzo y a la presión. Con asma: si está bien controlada y sin síntomas frecuentes, suele permitir bucear con evaluación médica previa; un asma con síntomas diarios normalmente no. Con el corazón, DAN distingue: una enfermedad coronaria CON síntomas (angina, etc.) es una contraindicación directa para bucear; solo tener factores de riesgo (hipertensión, colesterol, tabaco...) sin síntomas activos requiere evaluación cardiológica, no prohíbe por sí solo. Arritmias serias también exigen evaluación de un cardiólogo antes de bucear.`,
-    // Fuentes: https://dan.org/health-medicine/health-resources/diseases-conditions/cardiovascular-fitness-and-diving/
-    //          https://www.scubadiving.com/training/basic-skills/can-i-dive (asma, DAN ~4-5% de buceadores)
+    // Fuente: https://dan.org/health-medicine/health-resources/diseases-conditions/cardiovascular-fitness-and-diving/
+    //         https://www.scubadiving.com/training/basic-skills/can-i-dive (asma, DAN ~4-5% de buceadores)
   },
   {
-    id: 'age',
+    id: 'age', // Cuadro B: más de 45 años con factores de riesgo cardiovascular
     label: 'edad y buceo (45+ años)',
-    // "mayor" fuera a propósito: en español es una palabra demasiado genérica ("el pack
-    // mayor", "somos mayoría") y disparaba el tema de edad sin venir a cuento.
-    keywords: ['edad', 'age', '45 años', 'older diver', 'tercera edad', 'edad avanzada'],
+    // "mayor" fuera a propósito: en español es una palabra demasiado genérica ("el pack mayor",
+    // "somos mayoría") y disparaba el tema de edad sin venir a cuento. Los factores de riesgo
+    // del propio Cuadro B (colesterol, tabaco, antecedentes familiares) NO se detectan desde
+    // aquí sino desde cardio_resp, que es el tema cuyo texto los contesta: a un cliente de 30
+    // años con colesterol alto no le sirve el umbral de los 45.
+    keywords: [
+      'edad', 'age', '45 años', 'older diver', 'tercera edad', 'edad avanzada',
+    ],
     info: `Tener más de 45 años no es, por sí mismo, un impedimento para bucear — pero DAN ha medido que el riesgo de muerte por causa cardiaca buceando es hasta 10 veces mayor en mayores de 50 que en menores, así que es la edad a partir de la que se recomienda un examen médico anual (no solo puntual) antes de seguir buceando, sobre todo si hay algún factor de riesgo cardiovascular (tensión, colesterol, tabaco, antecedentes familiares...).`,
     // Fuente: https://dan.org/safety-prevention/diver-safety/divers-blog/health-concerns-for-divers-over-50/
     //         https://dan.org/health-medicine/health-resources/diseases-conditions/cardiovascular-fitness-and-diving/
@@ -63,7 +75,10 @@ const MEDICAL_TOPICS = [
   {
     id: 'fitness',
     label: 'forma física / capacidad de hacer esfuerzo',
-    keywords: ['forma física', 'fitness to dive', 'condición física', 'exercise tolerance', 'aptitud física'],
+    keywords: [
+      'forma física', 'fitness to dive', 'condición física', 'exercise tolerance',
+      'aptitud física',
+    ],
     info: `Bucear exige poder hacer un esfuerzo físico moderado con normalidad (el propio cuestionario médico lo mide con el ejemplo de caminar 1,6 km en 14 minutos o nadar 200 m sin parar). Si te cuesta ese nivel de esfuerzo, o si en el último año no has podido hacer actividad física normal por salud, es una señal de que conviene una evaluación médica antes de bucear.`,
   },
   {
@@ -81,7 +96,9 @@ const MEDICAL_TOPICS = [
   {
     id: 'recent_surgery',
     label: 'cirugía reciente o secuelas de una cirugía',
-    keywords: ['cirugía', 'operación', 'surgery', 'operated', 'operado', 'operada'],
+    keywords: [
+      'cirugía', 'operación', 'surgery', 'operated', 'operado', 'operada',
+    ],
     info: `Tras cualquier cirugía reciente (dentro de los últimos 12 meses) o con molestias todavía activas de una cirugía anterior, lo habitual es esperar a la aprobación médica antes de volver a bucear — el tiempo de espera varía mucho según el tipo de cirugía, así que no hay una regla única.`,
   },
   {
@@ -100,9 +117,9 @@ const MEDICAL_TOPICS = [
     id: 'psych', // Cuadro E
     label: 'ansiedad, ataques de pánico, depresión, adicciones',
     keywords: [
-      'ansiedad', 'anxiety', 'ataque de pánico', 'panic attack', 'pánico',
-      'depresión', 'depression', 'trastorno', 'disorder', 'psicológico', 'psychological',
-      'psiquiátrico', 'psychiatric', 'adicción', 'addiction',
+      'ansiedad', 'anxiety', 'ataque de pánico', 'panic attack', 'pánico', 'depresión',
+      'depression', 'trastorno', 'disorder', 'psicológico', 'psychological', 'psiquiátrico',
+      'psychiatric', 'adicción', 'addiction',
     ],
     info: `La ansiedad o el pánico son especialmente relevantes en buceo porque un imprevisto normal bajo el agua (una máscara que se inunda, por ejemplo) puede escalar a un pánico real y provocar una subida de emergencia peligrosa. No es un "no" automático — mucha gente con ansiedad bien manejada bucea sin problema — pero si hay un trastorno de pánico activo o tratamiento reciente, conviene comentarlo con quien lo trata antes de bucear.`,
     // Fuente: https://www.scubadiving.com/diving-doctor-anxiety-and-diving
@@ -120,7 +137,9 @@ const MEDICAL_TOPICS = [
   {
     id: 'gi', // Cuadro G
     label: 'estómago, intestino, diarrea',
-    keywords: ['estómago', 'intestino', 'stomach', 'intestine', 'diarrea', 'diarrhea', 'gastro'],
+    keywords: [
+      'estómago', 'intestino', 'stomach', 'intestine', 'diarrea', 'diarrhea', 'gastro',
+    ],
     info: `Problemas digestivos activos (diarrea reciente, molestias intestinales) son motivo para posponer la inmersión hasta que se resuelvan — no tanto por el buceo en sí, sino porque cualquier urgencia digestiva bajo el agua es mucho más difícil de gestionar.`,
   },
   {
@@ -138,7 +157,9 @@ const MEDICAL_TOPICS = [
   {
     id: 'pregnancy',
     label: 'embarazo',
-    keywords: ['embarazo', 'embarazada', 'pregnant', 'pregnancy', 'estoy esperando'],
+    keywords: [
+      'embarazo', 'embarazada', 'pregnant', 'pregnancy', 'estoy esperando',
+    ],
     info: `La recomendación estándar (DAN) es NO bucear durante el embarazo, ni si existe la posibilidad de estarlo — no hay suficiente evidencia de que sea seguro para el feto, y los estudios disponibles apuntan a más riesgo. La alternativa segura durante el embarazo es nadar o hacer snorkel en superficie, no buceo con botella.`,
     // Fuente: https://dan.org/health-medicine/health-resources/diseases-conditions/pregnancy-and-diving/
   },
