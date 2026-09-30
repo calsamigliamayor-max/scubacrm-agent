@@ -14,8 +14,13 @@
 // se puede espejar de verdad, mientras que las plantillas de WhatsApp del backend solo admiten una
 // huella (su texto se compone dentro de las funciones, con los datos de cada reserva).
 //
-// De momento se manda solo la huella: el ERP compara y avisa. Mandar además el texto para que se
-// reimporte solo es el paso siguiente del plan, y es lo que convertirá esto en un espejo.
+// Por eso se manda la huella Y EL TEXTO: cuando la huella no coincide con la que el ERP tiene
+// guardada, vuelve a trocear el texto por sus encabezados y reescribe sus secciones él solo. Su
+// copia no se queda esperando a que alguien corra un script — que era lo que la dejaba envejecer.
+//
+// El texto se manda siempre, no solo cuando cambia, porque este proceso no sabe qué tiene el ERP
+// guardado y preguntárselo antes serían dos viajes para ahorrar 77 KB cada doce horas. Quien decide
+// si hay que reescribir es el ERP, comparando huellas.
 //
 // Los marcadores `{{TODAY}}` y `{{TOMORROW_NOTE}}` se hashean SIN sustituir, a propósito: los
 // sustituye server.js en cada petición, así que el texto con los marcadores dentro es el canónico —
@@ -75,6 +80,9 @@ async function publicarHuellaConocimiento() {
         repo: 'scubacrm-agent',
         commit: process.env.RAILWAY_GIT_COMMIT_SHA || null,
         knowledgeFingerprint: huellaDelPrompt(),
+        // El prompt tal cual, con los marcadores {{TODAY}}/{{TOMORROW_NOTE}} sin sustituir: es el
+        // texto canónico, el mismo del que sale la huella, y el que el ERP trocea en secciones.
+        knowledgeText: SYSTEM_PROMPT,
         medicalFingerprint: huellaDeLaMedica(),
       }),
     })
@@ -86,7 +94,9 @@ async function publicarHuellaConocimiento() {
     const derivados = (cuerpo && cuerpo.derivados) || []
     console.log(
       '[huella] enviada al ERP' +
-      (derivados.length ? ' — la base del ERP está desactualizada respecto a este prompt' : ' — todo al día'),
+      (derivados.length
+        ? ' — el ERP NO ha podido reflejar este prompt, su copia sigue siendo la anterior'
+        : ' — su copia coincide con este prompt'),
     )
   } catch (err) {
     console.error('[huella] no se pudo avisar al ERP:', err.message)
