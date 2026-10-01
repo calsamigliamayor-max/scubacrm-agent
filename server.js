@@ -711,14 +711,29 @@ async function runAgentTurn(history, phone) {
           let result
           if (tu.name === 'create_booking' && bookingCreated) {
             // Segunda llamada a create_booking en el mismo turno → NO se ejecuta.
-            // Le devolvemos la reserva que ya existe y una instrucción clara de cerrar.
-            result = {
-              ...bookingCreated,
-              ok: true,
-              alreadyCreated: true,
-              warning: 'Ya has creado la reserva de este cliente en este mismo turno. NO crees otra. Responde ya al cliente confirmándole la reserva existente con su resumen.',
+            const sameService = normalizeService(tu.input.service) === normalizeService(bookingCreated.service)
+            if (sameService) {
+              // Misma reserva repetida: le devolvemos la que ya existe y una instrucción clara de cerrar.
+              result = {
+                ...bookingCreated,
+                ok: true,
+                alreadyCreated: true,
+                warning: 'Ya has creado la reserva de este cliente en este mismo turno. NO crees otra. Responde ya al cliente confirmándole la reserva existente con su resumen.',
+              }
+            } else {
+              // Otro SERVICIO distinto (típico: una familia donde cada uno hace algo distinto —
+              // incidente 01/10/2026, James Harrison: padres Thresher + hijo Bubblemaker). Antes se
+              // le devolvía ok:true con los datos de la primera reserva, el modelo lo leía como
+              // "las dos creadas" y le confirmó al cliente una reserva que NO existía (19.900 PHP
+              // sin registrar). Aquí NO puede salir ok:true: la segunda no se ha creado.
+              result = {
+                ok: false,
+                notCreated: true,
+                bookingId: bookingCreated.bookingId,
+                error: `Esta segunda reserva (${tu.input.service}) NO se ha creado y NO existe en el sistema: un cliente solo tiene UNA reserva. Solo está registrada la primera (${bookingCreated.service}). NO le digas al cliente que hay dos reservas ni que ya está registrado lo del segundo servicio. Dile al cliente con naturalidad que registraste la primera y que lo del segundo servicio lo consultas con el Manager (NO inventes que ya está hecho).`,
+              }
             }
-            console.warn('[agent] ⚠️  create_booking duplicado bloqueado (ya había una reserva en este turno).')
+            console.warn(`[agent] ⚠️  create_booking duplicado bloqueado (ya había una reserva en este turno)${sameService ? '' : ' — de OTRO servicio, devuelto como NO creada'}.`)
           } else {
             result = await runTool(tu.name, tu.input, phone)
             if (tu.name === 'create_booking' && result && result.ok !== false) bookingCreated = result
