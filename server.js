@@ -459,9 +459,21 @@ async function runTool(name, input, phone) {
         console.log('[tool·live] get_payment_status →', status, data)
         return { ok: status < 300, live: true, backendStatus: status, ...input, ...data }
       }
+      if (name === 'ask_manager') {
+        // Misma alerta roja que el fallo del agente, con otro motivo y la pregunta concreta (01/10/2026).
+        // A diferencia de reportAgentFailure NO es fire-and-forget: el resultado vuelve al modelo, para
+        // que sepa si el aviso salió. Si falla, el agente no debe prometer que el manager ya lo sabe.
+        const { status, data } = await postJSON(`${BACKEND_URL}/api/leads/agent-failure`, {
+          clientPhone, reason: 'asked_manager', detail: input.question,
+        })
+        console.log('[tool·live] ask_manager →', status, data)
+        return { ok: status < 300, live: true, backendStatus: status, notified: status < 300 }
+      }
     } catch (err) {
       console.error('[tool·live] Error:', err.message)
-      return { ok: false, live: true, error: err.message, ...input }
+      // ask_manager: un fallo de red también es "no he podido avisar" — el modelo solo reacciona al
+      // campo notified, así que sin él daría por avisado al manager un aviso que nunca salió.
+      return { ok: false, live: true, error: err.message, ...(name === 'ask_manager' && { notified: false }), ...input }
     }
   }
 
@@ -497,6 +509,10 @@ async function runTool(name, input, phone) {
       diverName: input.diverName || 'Diver de prueba',
       link: `https://scubacrm-frontend-production.up.railway.app/form/SIMULATED-BOOKING/1?lang=en`,
     }
+  }
+  if (name === 'ask_manager') {
+    console.log('[tool] ask_manager (SIMULADO):', input)
+    return { ok: true, simulated: true, notified: true }
   }
   if (name === 'get_payment_status') {
     console.log('[tool] get_payment_status (SIMULADO):', input)
@@ -730,7 +746,7 @@ async function runAgentTurn(history, phone) {
                 ok: false,
                 notCreated: true,
                 bookingId: bookingCreated.bookingId,
-                error: `Esta segunda reserva (${tu.input.service}) NO se ha creado y NO existe en el sistema: un cliente solo tiene UNA reserva. Solo está registrada la primera (${bookingCreated.service}). NO le digas al cliente que hay dos reservas ni que ya está registrado lo del segundo servicio. Dile al cliente con naturalidad que registraste la primera y que lo del segundo servicio lo consultas con el Manager (NO inventes que ya está hecho).`,
+                error: `Esta segunda reserva (${tu.input.service}) NO se ha creado y NO existe en el sistema: un cliente solo tiene UNA reserva. Solo está registrada la primera (${bookingCreated.service}). NO le digas al cliente que hay dos reservas ni que ya está registrado lo del segundo servicio. Llama AHORA a ask_manager con lo que el cliente quiere del segundo servicio (qué, para cuántas personas y para qué fecha) para que el Manager lo organice, y dile al cliente con naturalidad que registraste la primera y que lo del segundo servicio se lo has pasado al Manager (NO inventes que ya está hecho).`,
               }
             }
             console.warn(`[agent] ⚠️  create_booking duplicado bloqueado (ya había una reserva en este turno)${sameService ? '' : ' — de OTRO servicio, devuelto como NO creada'}.`)
