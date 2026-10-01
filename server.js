@@ -273,6 +273,49 @@ async function transcribeAudio(mediaUrl, contentType) {
   return (data.text || '').trim()
 }
 
+// ─── Archivos adjuntos (captura de la transferencia, PDF del banco…) ─────────
+// La factura le pide al cliente que mande el comprobante de pago por aquí mismo. Antes el
+// webhook solo entendía texto y notas de voz: un adjunto sin pie llegaba con Body vacío y se
+// descartaba en silencio (ni respuesta al cliente, ni rastro en el CRM), y uno con pie se
+// procesaba como si no llevara adjunto (01/10/2026).
+//
+// El archivo se guarda en el CRM (ficha de la reserva, sección Payment) y al modelo le llega
+// una línea marcadora que EMPIEZA por ATTACHMENT_MARK. Es deliberadamente neutra en idioma
+// ("📎 JPG"): una frase en español le imponía ese idioma a un cliente que escribe en inglés,
+// porque la detección de idioma lee el último mensaje (ver detectLang). El knowledge base
+// explica qué hacer al verla; el agente no ve la imagen y no la analiza.
+const ATTACHMENT_MARK = '📎'
+const ATTACHMENT_LABELS = { 'image/jpeg': 'JPG', 'image/png': 'PNG', 'image/webp': 'WEBP', 'application/pdf': 'PDF' }
+const ATTACHMENT_EXTS   = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf' }
+
+// Descarga el adjunto de Twilio (exige Basic Auth, igual que las notas de voz) y se lo pasa
+// al CRM para que lo guarde. Devuelve la línea marcadora si quedó guardado, o null si algo
+// falló — quien llama decide qué hacer (nunca prometer al cliente "lo hemos recibido" de un
+// archivo que no se guardó).
+async function savePaymentProof(phone, mediaUrl, contentType) {
+  try {
+    const fileRes = await fetch(mediaUrl, {
+      headers: {
+        Authorization: 'Basic ' + Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64'),
+      },
+    })
+    if (!fileRes.ok) throw new Error(`Descarga del adjunto falló: ${fileRes.status}`)
+    const buf = Buffer.from(await fileRes.arrayBuffer())
+    const type = (contentType || fileRes.headers.get('content-type') || 'application/octet-stream').split(';')[0].trim().toLowerCase()
+    const { status, data } = await postJSON(`${BACKEND_URL}/api/webhook/payment-proof`, {
+      clientPhone: phone,
+      fileName: `comprobante.${ATTACHMENT_EXTS[type] || 'bin'}`,
+      contentType: type,
+      dataBase64: buf.toString('base64'),
+    })
+    if (status !== 201) throw new Error(`El CRM no guardó el adjunto: ${status} ${data?.error || ''}`.trim())
+    return `${ATTACHMENT_MARK} ${ATTACHMENT_LABELS[type] || 'FILE'}`
+  } catch (err) {
+    console.error('[whatsapp] No se pudo guardar el adjunto:', err.message)
+    return null
+  }
+}
+
 // Manda un lote de eventos crudos de coste al cost-panel — NUNCA al CRM de este cliente
 // (BACKEND_URL), va directo a un servicio aparte con su propio secreto. Fire-and-forget:
 // un fallo aquí no debe afectar ni al turno ni a la reserva. Solo se manda en modo live y
@@ -560,8 +603,11 @@ async function runAgentTurn(history, phone) {
   // NO responde: se queda callado y el manager contesta a mano.
   if (AGENT_MODE === 'live') {
     let clientName = null
-    if (!capturedNames.has(phone) && lastText.trim().length > 1) {
-      const n = await extractClientName(lastText)
+    // Las líneas marcadoras de adjunto ("📎 JPG") no contienen ningún nombre: no gastamos una
+    // llamada a Haiku en un mensaje que es solo el archivo.
+    const lastTextNoMarkers = lastText.split('\n').filter(l => !l.startsWith(ATTACHMENT_MARK)).join('\n')
+    if (!capturedNames.has(phone) && lastTextNoMarkers.trim().length > 1) {
+      const n = await extractClientName(lastTextNoMarkers)
       clientName = n.result
       if (clientName) capturedNames.add(phone)
       if (n.usage) costEvents.push(anthropicEvent('extract_name', n.usage, n.model))
@@ -877,6 +923,22 @@ async function fetchLeadHistory(phone) {
   }
 }
 
+// Mensaje puente por WhatsApp cuando no hemos podido procesar lo que mandó el cliente (nota
+// de voz sin transcribir, adjunto sin guardar): nunca silencio, y el manager ya ha sido
+// avisado aparte con reportAgentFailure.
+async function sendBridgeMessage(to) {
+  try {
+    const msg = await twilioClient.messages.create({
+      from: `whatsapp:${TWILIO_WHATSAPP_NUMBER}`,
+      to,
+      body: bridgeMessage(),
+    })
+    postCostEvents([{ pipeline: 'whatsapp', bucket: HAMMERZ_COST_BUCKET, twilioSid: msg?.sid || null, whatsappDirection: 'outbound' }])
+  } catch (err) {
+    console.error('[whatsapp] No se pudo mandar el mensaje puente:', err.message)
+  }
+}
+
 // Webhook de WhatsApp: Twilio llama aquí cada vez que un cliente escribe de verdad.
 // Solo activo en modo live (en simulado no tiene sentido, no hay CRM real al que apuntar).
 app.post('/webhook/whatsapp', express.urlencoded({ extended: false }), async (req, res) => {
@@ -917,18 +979,31 @@ app.post('/webhook/whatsapp', express.urlencoded({ extended: false }), async (re
       // Mismo camino que cuando el agente no consigue responder por cualquier otro
       // motivo: mensaje puente al cliente (nunca silencio) + aviso al manager.
       reportAgentFailure(phone, 'audio_no_transcrito').catch(() => {})
-      try {
-        const msg = await twilioClient.messages.create({
-          from: `whatsapp:${TWILIO_WHATSAPP_NUMBER}`,
-          to: from,
-          body: bridgeMessage(),
-        })
-        postCostEvents([{ pipeline: 'whatsapp', bucket: HAMMERZ_COST_BUCKET, twilioSid: msg?.sid || null, whatsappDirection: 'outbound' }])
-      } catch (err) {
-        console.error('[whatsapp] No se pudo mandar el mensaje puente tras audio fallido:', err.message)
-      }
+      await sendBridgeMessage(from)
       return
     }
+  }
+
+  // Cualquier otro adjunto (imagen, PDF…): se guarda en el CRM y el modelo recibe una línea
+  // marcadora (ver ATTACHMENT_MARK). Si hay pie de foto, va junto al marcador en el mismo
+  // turno; si no hay pie, el marcador es todo el mensaje.
+  if (numMedia > 0 && !mediaType.startsWith('audio/')) {
+    const markers = []
+    let failed = false
+    for (let i = 0; i < numMedia; i++) {
+      const type = req.body[`MediaContentType${i}`] || ''
+      if (type.startsWith('audio/')) continue
+      const marker = await savePaymentProof(phone, req.body[`MediaUrl${i}`], type)
+      if (marker) markers.push(marker); else failed = true
+    }
+    if (failed) reportAgentFailure(phone, 'adjunto_no_guardado').catch(() => {})
+    if (markers.length === 0 && !body) {
+      // Nada guardado y nada que contestar: mismo camino que la nota de voz fallida. Mejor el
+      // mensaje puente que decirle "recibido" a un archivo que no tenemos.
+      await sendBridgeMessage(from)
+      return
+    }
+    body = [body, ...markers].filter(Boolean).join('\n')
   }
 
   if (!from || !body) return
