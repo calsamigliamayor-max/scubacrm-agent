@@ -246,16 +246,37 @@ async function postJSON(url, body) {
   return { status: r.status, data }
 }
 
-// Descarga una nota de voz de WhatsApp (Twilio exige Basic Auth para leer el adjunto,
-// igual que para mandar mensajes) y la transcribe con Whisper. Tira un error si algo
+// Descarga un adjunto de Twilio (audio, imagen, PDF). Twilio exige Basic Auth para leerlo, y
+// avisa del mensaje por el webhook un instante ANTES de tener el archivo listo: pedirlo en ese
+// mismo momento devuelve 404 aunque unos minutos después se descargue sin problema (incidente
+// 01/10/2026: tres notas de voz seguidas, las tres con 404, y las tres descargaban bien a
+// posteriori con las mismas credenciales). Por eso se reintenta con esperas crecientes ante un
+// 404, un 5xx o un fallo de red — un 401/403 no se reintenta, no lo arregla esperar. Como el
+// webhook ya respondió a Twilio, esperar aquí no provoca reenvíos. Devuelve el último Response
+// (el llamador sigue comprobando .ok) o tira el último error de red.
+const MEDIA_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000]
+async function fetchTwilioMedia(mediaUrl) {
+  const headers = {
+    Authorization: 'Basic ' + Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64'),
+  }
+  for (let attempt = 0; ; attempt++) {
+    let res = null, netErr = null
+    try { res = await fetch(mediaUrl, { headers }) } catch (err) { netErr = err }
+    const retryable = netErr || res.status === 404 || res.status >= 500
+    if (!retryable || attempt >= MEDIA_RETRY_DELAYS_MS.length) {
+      if (netErr) throw netErr
+      return res
+    }
+    console.warn(`[whatsapp] Adjunto aún no disponible (${netErr ? netErr.message : res.status}) — reintento ${attempt + 1}/${MEDIA_RETRY_DELAYS_MS.length} en ${MEDIA_RETRY_DELAYS_MS[attempt] / 1000}s`)
+    await new Promise(resolve => setTimeout(resolve, MEDIA_RETRY_DELAYS_MS[attempt]))
+  }
+}
+
+// Descarga una nota de voz de WhatsApp y la transcribe con Whisper. Tira un error si algo
 // falla — quien llame decide qué hacer (aquí: avisar al manager y mandar el mensaje
 // puente, nunca dejar al cliente sin respuesta ni intentar "adivinar" el audio).
 async function transcribeAudio(mediaUrl, contentType) {
-  const audioRes = await fetch(mediaUrl, {
-    headers: {
-      Authorization: 'Basic ' + Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64'),
-    },
-  })
+  const audioRes = await fetchTwilioMedia(mediaUrl)
   if (!audioRes.ok) throw new Error(`Descarga del audio falló: ${audioRes.status}`)
   const audioBuffer = await audioRes.arrayBuffer()
 
@@ -294,11 +315,7 @@ const ATTACHMENT_EXTS   = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp
 // archivo que no se guardó).
 async function savePaymentProof(phone, mediaUrl, contentType) {
   try {
-    const fileRes = await fetch(mediaUrl, {
-      headers: {
-        Authorization: 'Basic ' + Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64'),
-      },
-    })
+    const fileRes = await fetchTwilioMedia(mediaUrl)
     if (!fileRes.ok) throw new Error(`Descarga del adjunto falló: ${fileRes.status}`)
     const buf = Buffer.from(await fileRes.arrayBuffer())
     const type = (contentType || fileRes.headers.get('content-type') || 'application/octet-stream').split(';')[0].trim().toLowerCase()
@@ -923,15 +940,32 @@ async function fetchLeadHistory(phone) {
   }
 }
 
+// Idioma de una conversación cuando el último mensaje no trae texto del que detectarlo (nota de
+// voz o adjunto): se recorren los últimos mensajes del cliente en el historial, del más reciente
+// al más antiguo, hasta que detectLang —la detección rápida, sin IA y sin coste— da un
+// resultado. null si no hay señal (conversación nueva, o solo "ok"/números).
+async function inferConversationLang(phone) {
+  const history = await fetchLeadHistory(phone)
+  const userMsgs = history.filter(m => m.role === 'user' && typeof m.content === 'string')
+  for (const m of userMsgs.slice(-5).reverse()) {
+    const lang = detectLang(m.content)
+    if (lang) return lang
+  }
+  return null
+}
+
 // Mensaje puente por WhatsApp cuando no hemos podido procesar lo que mandó el cliente (nota
 // de voz sin transcribir, adjunto sin guardar): nunca silencio, y el manager ya ha sido
-// avisado aparte con reportAgentFailure.
-async function sendBridgeMessage(to) {
+// avisado aparte con reportAgentFailure. Sale en el idioma de la conversación; sin señal,
+// en inglés. Antes se llamaba a bridgeMessage() sin idioma y salía SIEMPRE en inglés, también
+// a un cliente que hablaba español (visto el 01/10/2026).
+async function sendBridgeMessage(to, phone) {
   try {
+    const lang = await inferConversationLang(phone)
     const msg = await twilioClient.messages.create({
       from: `whatsapp:${TWILIO_WHATSAPP_NUMBER}`,
       to,
-      body: bridgeMessage(),
+      body: bridgeMessage(lang),
     })
     postCostEvents([{ pipeline: 'whatsapp', bucket: HAMMERZ_COST_BUCKET, twilioSid: msg?.sid || null, whatsappDirection: 'outbound' }])
   } catch (err) {
@@ -979,7 +1013,7 @@ app.post('/webhook/whatsapp', express.urlencoded({ extended: false }), async (re
       // Mismo camino que cuando el agente no consigue responder por cualquier otro
       // motivo: mensaje puente al cliente (nunca silencio) + aviso al manager.
       reportAgentFailure(phone, 'audio_no_transcrito').catch(() => {})
-      await sendBridgeMessage(from)
+      await sendBridgeMessage(from, phone)
       return
     }
   }
@@ -1000,7 +1034,7 @@ app.post('/webhook/whatsapp', express.urlencoded({ extended: false }), async (re
     if (markers.length === 0 && !body) {
       // Nada guardado y nada que contestar: mismo camino que la nota de voz fallida. Mejor el
       // mensaje puente que decirle "recibido" a un archivo que no tenemos.
-      await sendBridgeMessage(from)
+      await sendBridgeMessage(from, phone)
       return
     }
     body = [body, ...markers].filter(Boolean).join('\n')
