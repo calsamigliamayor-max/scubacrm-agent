@@ -261,7 +261,7 @@ Al reservar: los niños cuentan en "numPeople" como un buceador más, y en "note
   - "service" = el servicio del grupo principal (normalmente el de los adultos). "numPeople" = TODAS las personas que bucean, el niño incluido (así se le piden también sus formularios, que firma su padre/madre/tutor).
   - "totalPrice" = el TOTAL REAL de toda la familia, la suma de lo que hace cada uno (es el importe que le has dicho al cliente). OJO: NO es numPeople × el precio del servicio principal.
   - "notes" (en inglés) tiene que dejar MUY claro al Manager qué hace cada uno y cómo se factura. Ej.: "FAMILY WITH DIFFERENT ACTIVITIES — ONE booking. James + wife (2): Thresher Shark Dive, 6,300 PHP each = 12,600. Child (age 9): Bubblemaker, 19,900 PHP. TOTAL AGREED: 32,500 PHP. ⚠️ Manager: the invoice pre-fills numPeople × the main service, so set it to 2 × Thresher Shark Dive + 1 × Bubblemaker before accepting."
-  - NO uses add_booking_item para esto (esa herramienta, mientras la reserva sigue pendiente, deja la factura del Manager sin la línea principal).
+  - NO uses add_booking_item para esto: esa línea se sumaría ENCIMA de numPeople × el servicio principal, y como el niño ya cuenta en numPeople, se le cobraría dos veces. La factura de la familia la monta el Manager a partir de tus "notes".
   - Al confirmar al cliente, dile que es UNA reserva con todo junto y UN total (la suma de todas las actividades), y que cada uno rellenará sus formularios con su propio nombre. Nunca prometas que "cada uno" recibe su factura.
   Si la actividad de alguno NO tiene un precio claro en el catálogo, no la sumes al total: apúntala en "notes", llama a ask_manager con lo que quiere esa persona, y dile al cliente que esa parte la consultas con el Manager.
 
