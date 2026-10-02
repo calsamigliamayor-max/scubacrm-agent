@@ -125,7 +125,11 @@ function sameServiceName(a, b) {
 // Para la guardia de create_booking repetido en el mismo turno: ¿la segunda llamada, del MISMO
 // servicio, trae otra fecha u otro número de personas que la primera? Un dato que falta en
 // cualquiera de las dos no cuenta como distinto. Devuelve null si coinciden, o el resumen de cada una.
+// Un pack a medida (con days) queda fuera: su fecha es la del primer día y a un pack el prompt le
+// PROHÍBE request_modification (se rehace entero con create_booking), así que mandarle ahí
+// contradiría al prompt. Se queda como antes: "ya creada" (lo encontró la revisión del 02/10/2026).
 function datosDistintos(nueva, creada) {
+  if (Array.isArray(nueva.days) || Array.isArray(creada.days)) return null
   const fecha = (v) => (v ? String(v).slice(0, 10) : null)
   const personas = (v) => (Number.isInteger(Number(v)) && Number(v) > 0 ? Number(v) : null)
   const difiere = (a, b) => a !== null && b !== null && a !== b
