@@ -50,6 +50,19 @@ const TWILIO_AUTH_TOKEN      = process.env.TWILIO_AUTH_TOKEN || ''
 const TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER || ''
 const twilioClient = (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN) ? twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) : null
 
+// ─── Zernio (segundo canal de WhatsApp, en prueba desde el 02/10/2026) ──────
+// Número comprado en Zernio y conectado a Meta por ellos (proveedor ya aprobado: sin pasar
+// por Tech Provider). Convive con Twilio: cada mensaje se contesta por el canal por el que
+// llegó. Webhook entrante: POST /webhook/zernio. Sin ZERNIO_API_KEY y ZERNIO_WEBHOOK_SECRET
+// el canal está apagado y el de Twilio sigue igual.
+// ZERNIO_ACCOUNT_ID: los webhooks de Zernio son por equipo, no por número — en cuanto haya
+// un segundo número en la misma cuenta de Zernio (otro centro), sus mensajes llegarían
+// también aquí. Con la variable puesta, solo se atiende a esa cuenta.
+const ZERNIO_API_URL        = process.env.ZERNIO_API_URL || 'https://zernio.com/api/v1'
+const ZERNIO_API_KEY        = process.env.ZERNIO_API_KEY || ''
+const ZERNIO_WEBHOOK_SECRET = process.env.ZERNIO_WEBHOOK_SECRET || ''
+const ZERNIO_ACCOUNT_ID     = process.env.ZERNIO_ACCOUNT_ID || ''
+
 // ─── OpenAI (solo para transcribir notas de voz de WhatsApp) ────────────────
 // Pieza aparte de Anthropic (el cerebro del agente) — Claude no acepta audio por API.
 // Si falta la clave, las notas de voz se siguen sin poder entender (comportamiento
@@ -73,7 +86,7 @@ const HAMMERZ_COST_BUCKET  = process.env.HAMMERZ_COST_BUCKET || 'sales'
 // ─── Login del playground público ───────────────────────────────────────────
 // Sin esto, cualquiera con la URL puede chatear con el agente en modo live y crear Leads
 // (y reservas) reales en el CRM de producción, sin que nadie se entere. Protege la página
-// y las rutas de la demo — NUNCA /webhook/whatsapp (tráfico real de Twilio, no manda estas
+// y las rutas de la demo — NUNCA /webhook/whatsapp ni /webhook/zernio (tráfico real, no manda estas
 // credenciales) ni /api/health (para que la monitorización externa la compruebe sin login).
 // Sin las dos variables puestas, se bloquea en vez de quedarse abierto por defecto.
 const PLAYGROUND_USER     = process.env.PLAYGROUND_USER || ''
@@ -98,7 +111,9 @@ function requirePlaygroundAuth(req, res, next) {
 }
 
 const app = express()
-app.use(express.json())
+// rawBody: la firma de Zernio es un HMAC del cuerpo EXACTO tal como llegó; el JSON ya
+// parseado y vuelto a serializar no tiene por qué coincidir byte a byte.
+app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf } }))
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HERRAMIENTAS (simuladas). NO tocan ninguna base de datos ni el CRM real.
@@ -282,10 +297,20 @@ async function postJSON(url, body) {
 // webhook ya respondió a Twilio, esperar aquí no provoca reenvíos. Devuelve el último Response
 // (el llamador sigue comprobando .ok) o tira el último error de red.
 const MEDIA_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000]
-async function fetchTwilioMedia(mediaUrl) {
-  const headers = {
+function fetchTwilioMedia(mediaUrl) {
+  return fetchMediaWithRetry(mediaUrl, {
     Authorization: 'Basic ' + Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64'),
-  }
+  })
+}
+
+// Los adjuntos de WhatsApp que llegan por Zernio apuntan a su endpoint autenticado
+// (/v1/whatsapp/media/{id}), que pide la API key. Hay que descargarlos al recibirlos: Meta
+// borra el archivo pasado un tiempo y después ya no hay forma de recuperarlo.
+function fetchZernioMedia(mediaUrl) {
+  return fetchMediaWithRetry(mediaUrl, { Authorization: `Bearer ${ZERNIO_API_KEY}` })
+}
+
+async function fetchMediaWithRetry(mediaUrl, headers) {
   for (let attempt = 0; ; attempt++) {
     let res = null, netErr = null
     try { res = await fetch(mediaUrl, { headers }) } catch (err) { netErr = err }
@@ -302,8 +327,8 @@ async function fetchTwilioMedia(mediaUrl) {
 // Descarga una nota de voz de WhatsApp y la transcribe con Whisper. Tira un error si algo
 // falla — quien llame decide qué hacer (aquí: avisar al manager y mandar el mensaje
 // puente, nunca dejar al cliente sin respuesta ni intentar "adivinar" el audio).
-async function transcribeAudio(mediaUrl, contentType) {
-  const audioRes = await fetchTwilioMedia(mediaUrl)
+async function transcribeAudio(mediaUrl, contentType, fetchMedia = fetchTwilioMedia) {
+  const audioRes = await fetchMedia(mediaUrl)
   if (!audioRes.ok) throw new Error(`Descarga del audio falló: ${audioRes.status}`)
   const audioBuffer = await audioRes.arrayBuffer()
 
@@ -340,9 +365,9 @@ const ATTACHMENT_EXTS   = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp
 // al CRM para que lo guarde. Devuelve la línea marcadora si quedó guardado, o null si algo
 // falló — quien llama decide qué hacer (nunca prometer al cliente "lo hemos recibido" de un
 // archivo que no se guardó).
-async function savePaymentProof(phone, mediaUrl, contentType) {
+async function savePaymentProof(phone, mediaUrl, contentType, fetchMedia = fetchTwilioMedia) {
   try {
-    const fileRes = await fetchTwilioMedia(mediaUrl)
+    const fileRes = await fetchMedia(mediaUrl)
     if (!fileRes.ok) throw new Error(`Descarga del adjunto falló: ${fileRes.status}`)
     const buf = Buffer.from(await fileRes.arrayBuffer())
     const type = (contentType || fileRes.headers.get('content-type') || 'application/octet-stream').split(';')[0].trim().toLowerCase()
@@ -1049,15 +1074,41 @@ async function inferConversationLang(phone) {
 async function sendBridgeMessage(to, phone) {
   try {
     const lang = await inferConversationLang(phone)
-    const msg = await twilioClient.messages.create({
-      from: `whatsapp:${TWILIO_WHATSAPP_NUMBER}`,
-      to,
-      body: bridgeMessage(lang),
-    })
-    postCostEvents([{ pipeline: 'whatsapp', bucket: HAMMERZ_COST_BUCKET, twilioSid: msg?.sid || null, whatsappDirection: 'outbound' }])
+    await sendWhatsAppText(to, bridgeMessage(lang))
   } catch (err) {
     console.error('[whatsapp] No se pudo mandar el mensaje puente:', err.message)
   }
+}
+
+// Manda un texto por WhatsApp por el MISMO canal por el que escribió el cliente. `to` es el
+// destino tal como lo dejó el webhook de entrada: 'whatsapp:+34…' si vino por Twilio, o
+// { via: 'zernio', conversationId, accountId } si vino por Zernio. Tira un error si el envío
+// falla — quien llama decide qué hacer.
+async function sendWhatsAppText(to, body) {
+  if (to && to.via === 'zernio') {
+    const r = await fetch(`${ZERNIO_API_URL}/inbox/conversations/${encodeURIComponent(to.conversationId)}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ZERNIO_API_KEY}` },
+      body: JSON.stringify({ accountId: to.accountId, message: body }),
+    })
+    if (!r.ok) {
+      const detail = await r.text().catch(() => '')
+      throw new Error(`Zernio rechazó el envío: ${r.status} ${detail.slice(0, 300)}`)
+    }
+    // Sin evento de coste a propósito: el cost-panel pone a cada WhatsApp la tarifa
+    // provisional de Twilio, que no es lo que cobra Zernio (10.000 mensajes/mes gratis y
+    // Meta no cobra las respuestas dentro de las 24h). Pendiente: que el cost-panel
+    // distinga el proveedor.
+    return
+  }
+  const msg = await twilioClient.messages.create({
+    from: `whatsapp:${TWILIO_WHATSAPP_NUMBER}`,
+    to,
+    body,
+  })
+  // Este envío es la "voz" del agente, no un recordatorio automático del CRM — va
+  // como 'sales' igual que las llamadas a Anthropic de este mismo turno.
+  postCostEvents([{ pipeline: 'whatsapp', bucket: HAMMERZ_COST_BUCKET, twilioSid: msg?.sid || null, whatsappDirection: 'outbound' }])
 }
 
 // Webhook de WhatsApp: Twilio llama aquí cada vez que un cliente escribe de verdad.
@@ -1129,6 +1180,122 @@ app.post('/webhook/whatsapp', express.urlencoded({ extended: false }), async (re
 
   if (!from || !body) return
   bufferIncomingMessage(phone, from, body)
+})
+
+// Webhook de Zernio: el mismo recorrido que el de Twilio de arriba (nota de voz → Whisper,
+// adjunto → CRM, ráfaga → un solo turno), con el formato de Zernio. La respuesta sale por
+// Zernio porque `to` lleva la conversación de Zernio (ver sendWhatsAppText).
+// Zernio entrega "al menos una vez": el mismo evento puede llegar dos veces, y sin el filtro
+// de ids el agente contestaría dos veces. Basta en memoria: un reinicio entre dos entregas
+// del mismo evento es improbable y el daño sería una respuesta repetida, no una reserva.
+const ZERNIO_SEEN_TTL_MS = 24 * 60 * 60 * 1000
+const zernioSeenEvents = new Map()   // id del evento -> cuándo llegó
+function zernioEventAlreadySeen(id) {
+  const now = Date.now()
+  for (const [seenId, at] of zernioSeenEvents) {
+    if (now - at > ZERNIO_SEEN_TTL_MS) zernioSeenEvents.delete(seenId)
+  }
+  if (zernioSeenEvents.has(id)) return true
+  zernioSeenEvents.set(id, now)
+  return false
+}
+
+app.post('/webhook/zernio', async (req, res) => {
+  // Firma: HMAC-SHA256 (hex) del cuerpo tal cual llegó, con el secreto del webhook. Sin
+  // secreto configurado se rechaza todo — igual que Twilio sin Auth Token.
+  const signature = String(req.headers['x-zernio-signature'] || '')
+  const expected = (ZERNIO_WEBHOOK_SECRET && req.rawBody)
+    ? crypto.createHmac('sha256', ZERNIO_WEBHOOK_SECRET).update(req.rawBody).digest('hex')
+    : ''
+  if (!expected || !safeEqual(signature, expected)) {
+    console.warn('[zernio] Firma inválida — petición rechazada.')
+    return res.status(403).send('Firma inválida')
+  }
+
+  // Zernio pide respuesta en menos de 5s o reintenta: contestamos ya y trabajamos después.
+  res.status(200).json({ ok: true })
+
+  const event = req.body || {}
+  if (event.event === 'webhook.test') {
+    console.log('[zernio] Webhook de prueba recibido — la firma cuadra.')
+    return
+  }
+  if (AGENT_MODE !== 'live' || !ZERNIO_API_KEY) return
+  if (event.event !== 'message.received' || !event.id) return
+  if (zernioEventAlreadySeen(event.id)) return
+
+  try {
+    const m = event.message || {}
+    if (m.platform !== 'whatsapp' || m.direction !== 'incoming') return
+    // Si algún día se activa el agente de Meta en el número, Zernio marca así los mensajes
+    // que ese agente ya está contestando: contestar también le quitaría la conversación.
+    if (event.metadata?.standby) return
+
+    const accountId = event.account?.accountId || event.account?.id || ''
+    if (ZERNIO_ACCOUNT_ID && accountId !== ZERNIO_ACCOUNT_ID) {
+      console.warn(`[zernio] Mensaje de otra cuenta de Zernio (${accountId}) — ignorado.`)
+      return
+    }
+    if (!ZERNIO_ACCOUNT_ID) console.warn(`[zernio] Falta ZERNIO_ACCOUNT_ID — se atiende a cualquier cuenta. Esta es: ${accountId}`)
+
+    // El teléfono es la llave del cliente en el CRM (ficha, Lead, reservas) y tiene que salir
+    // con el MISMO formato que por Twilio ('+34…'), o el mismo cliente sería otra ficha y no
+    // se le reconocería al volver. Zernio da `phoneNumber` en E.164 y `sender.id` sin el '+'.
+    // Desde abril de 2026 WhatsApp permite escribir con nombre de usuario sin enseñar el
+    // número: entonces no hay teléfono y no hay con qué crear la ficha.
+    const sender = m.sender || {}
+    const rawPhone = sender.phoneNumber || (/^\d{6,15}$/.test(sender.id || '') ? `+${sender.id}` : '')
+    const phone = /^\+\d{6,15}$/.test(rawPhone) ? rawPhone : ''
+    if (!phone) {
+      console.error(`[zernio] Mensaje sin número de teléfono (¿usuario de WhatsApp con nombre de usuario?) — sin atender. Conversación ${m.conversationId}`)
+      return
+    }
+
+    const to = { via: 'zernio', conversationId: m.conversationId || event.conversation?.id, accountId }
+    let body = (m.text || '').trim()
+    const attachments = Array.isArray(m.attachments) ? m.attachments : []
+    const audio = attachments.find(a => a.type === 'audio')
+    const files = attachments.filter(a => a.type !== 'audio')
+
+    if (!body && audio) {
+      if (!OPENAI_API_KEY) {
+        console.warn('[zernio] Nota de voz recibida pero falta OPENAI_API_KEY — no se puede transcribir.')
+      } else {
+        try {
+          body = await transcribeAudio(audio.url, audio.mimeType || '', fetchZernioMedia)
+        } catch (err) {
+          console.error('[zernio] Error transcribiendo audio:', err.message)
+        }
+      }
+      if (!body) {
+        reportAgentFailure(phone, 'audio_no_transcrito').catch(() => {})
+        await sendBridgeMessage(to, phone)
+        return
+      }
+    }
+
+    if (files.length > 0) {
+      const markers = []
+      let failed = false
+      for (const f of files) {
+        const marker = await savePaymentProof(phone, f.url, f.mimeType || '', fetchZernioMedia)
+        if (marker) markers.push(marker); else failed = true
+      }
+      if (failed) reportAgentFailure(phone, 'adjunto_no_guardado').catch(() => {})
+      if (markers.length === 0 && !body) {
+        await sendBridgeMessage(to, phone)
+        return
+      }
+      body = [body, ...markers].filter(Boolean).join('\n')
+    }
+
+    if (!to.conversationId || !body) return
+    bufferIncomingMessage(phone, to, body)
+  } catch (err) {
+    // Ya hemos contestado 200: un error aquí no puede llegar a Express, y sin este catch
+    // tumbaría el proceso (ver unhandledRejection arriba).
+    console.error('[zernio] Error procesando el mensaje:', err.message)
+  }
 })
 
 // ─── Ráfaga de mensajes: agrupar antes de responder ─────────────────────────
@@ -1206,23 +1373,14 @@ async function flushPendingMessages(phone, from) {
       const history = await fetchLeadHistory(phone)
       history.push({ role: 'user', content: body })
       const { reply, paused } = await runAgentTurn(history, phone)
-      if (reply && !paused) {
-        const msg = await twilioClient.messages.create({
-          from: `whatsapp:${TWILIO_WHATSAPP_NUMBER}`,
-          to: from,
-          body: reply,
-        })
-        // Este envío es la "voz" del agente, no un recordatorio automático del CRM — va
-        // como 'sales' igual que las llamadas a Anthropic de este mismo turno.
-        postCostEvents([{ pipeline: 'whatsapp', bucket: HAMMERZ_COST_BUCKET, twilioSid: msg?.sid || null, whatsappDirection: 'outbound' }])
-      }
+      if (reply && !paused) await sendWhatsAppText(from, reply)
     } catch (err) {
       console.error('[whatsapp] Error procesando mensaje entrante:', err.message)
     }
   })
 }
 
-// Registrado AL FINAL a propósito: /webhook/whatsapp y /api/health ya han sido atendidos
+// Registrado AL FINAL a propósito: /webhook/whatsapp, /webhook/zernio y /api/health ya han sido atendidos
 // por sus propias rutas arriba antes de que una petición llegue hasta aquí, así que el
 // login del playground nunca les afecta — solo protege la página y sus assets estáticos.
 app.use(requirePlaygroundAuth, express.static(path.join(__dirname, 'public')))
