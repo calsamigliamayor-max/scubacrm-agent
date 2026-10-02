@@ -113,6 +113,29 @@ function normalizeService(s) {
   return packs[key] || s.trim()
 }
 
+// ¿Son el mismo servicio? Tras normalizeService, y sin fijarse en mayúsculas, tildes ni espacios de
+// más (02/10/2026): la guardia de create_booking repetido comparaba con === y "fun dive" ≠ "Fun Dive"
+// le diría al modelo que la MISMA reserva repetida es otra que no existe. Igual que el backend al
+// reconocer el nombre (canonicalService).
+const foldServiceName = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase()
+function sameServiceName(a, b) {
+  return foldServiceName(normalizeService(a)) === foldServiceName(normalizeService(b))
+}
+
+// Para la guardia de create_booking repetido en el mismo turno: ¿la segunda llamada, del MISMO
+// servicio, trae otra fecha u otro número de personas que la primera? Un dato que falta en
+// cualquiera de las dos no cuenta como distinto. Devuelve null si coinciden, o el resumen de cada una.
+function datosDistintos(nueva, creada) {
+  const fecha = (v) => (v ? String(v).slice(0, 10) : null)
+  const personas = (v) => (Number.isInteger(Number(v)) && Number(v) > 0 ? Number(v) : null)
+  const difiere = (a, b) => a !== null && b !== null && a !== b
+  const f1 = fecha(creada.activityDate), f2 = fecha(nueva.activityDate)
+  const p1 = personas(creada.numPeople), p2 = personas(nueva.numPeople)
+  if (!difiere(f1, f2) && !difiere(p1, p2)) return null
+  const resumen = (f, p) => [f && `fecha ${f}`, p && `${p} personas`].filter(Boolean).join(', ') || 'sin fecha ni personas'
+  return { antes: resumen(f1, p1), ahora: resumen(f2, p2) }
+}
+
 // Detección RÁPIDA de idioma (solo español/inglés claros) para no llamar a la IA en los casos
 // más comunes. Si no lo tiene claro devuelve null → se usa la detección universal por IA.
 function detectLang(text) {
@@ -350,6 +373,24 @@ async function postCostEvents(events) {
   }
 }
 
+// El backend no crea ni toca nada cuando llega OTRO servicio para un cliente cuya reserva sigue en
+// revisión (409 OTHER_SERVICE_PENDING, 02/10/2026): antes la sustituía y aquí se devolvía ok:true.
+// La guardia de runAgentTurn solo ve el MISMO turno; esto cubre un mensaje posterior ("y para mi
+// hijo…"). Sin los datos de la llamada mezclados (`...input`): el modelo los leería como lo registrado.
+function otroServicioEnRevision(data, status) {
+  const tiene = data.existingService
+  const pide = data.requestedService
+  return {
+    ok: false,
+    live: true,
+    backendStatus: status,
+    notCreated: true,
+    bookingId: data.bookingId,
+    existingService: tiene,
+    error: `NO se ha creado ninguna reserva nueva y la que ya tiene este cliente (${tiene}) sigue exactamente igual, pendiente de que la revise el Manager. Un cliente solo tiene UNA reserva. Según lo que quiera el cliente: si quiere CAMBIAR lo que ya reservó por ${pide} → usa request_modification. Si quiere AÑADIR ${pide} a lo que ya tiene (otra actividad, u otra persona de la familia o del grupo) → llama AHORA a ask_manager con qué quiere, para cuántas personas y para qué fecha, y dile al cliente con naturalidad que se lo has pasado al Manager. Si no está claro cuál de las dos cosas quiere, pregúntaselo. NO le digas que ${pide} está reservado.`,
+  }
+}
+
 async function runTool(name, input, phone) {
   const clientPhone = phone || DEMO_PHONE
   // ── MODO LIVE: llama a los endpoints reales del CRM ──
@@ -394,6 +435,7 @@ async function runTool(name, input, phone) {
             : null,
         })
         console.log('[tool·live] create_booking →', status, data)
+        if (data?.code === 'OTHER_SERVICE_PENDING') return otroServicioEnRevision(data, status)
         return { ok: status < 300, live: true, backendStatus: status, ...data, ...input }
       }
       if (name === 'request_cancellation') {
@@ -727,8 +769,18 @@ async function runAgentTurn(history, phone) {
           let result
           if (tu.name === 'create_booking' && bookingCreated) {
             // Segunda llamada a create_booking en el mismo turno → NO se ejecuta.
-            const sameService = normalizeService(tu.input.service) === normalizeService(bookingCreated.service)
-            if (sameService) {
+            const sameService = sameServiceName(tu.input.service, bookingCreated.service)
+            const otrosDatos = sameService && datosDistintos(tu.input, bookingCreated)
+            if (otrosDatos) {
+              // Mismo servicio pero otra fecha u otro número de personas (02/10/2026): no es "la misma
+              // reserva repetida". Antes se le decía "ya creada", y lo de la segunda llamada se perdía.
+              result = {
+                ok: false,
+                notCreated: true,
+                bookingId: bookingCreated.bookingId,
+                error: `Esta segunda llamada NO se ha ejecutado: ya registraste en este turno la reserva de ${bookingCreated.service} (${otrosDatos.antes}), y un cliente solo tiene UNA reserva. Esta llamada traía ${otrosDatos.ahora}. Si es la MISMA reserva con un dato corregido → usa request_modification con el dato nuevo. Si es OTRA reserva distinta (otra fecha u otras personas) → llama AHORA a ask_manager con lo que quiere el cliente y dile con naturalidad que se lo has pasado al Manager. NO le digas que está registrado lo de esta segunda llamada.`,
+              }
+            } else if (sameService) {
               // Misma reserva repetida: le devolvemos la que ya existe y una instrucción clara de cerrar.
               result = {
                 ...bookingCreated,
