@@ -614,6 +614,7 @@ const TOOLS = [
         newNumPeople:     { type: 'integer', description: 'Nuevo nº TOTAL de personas. SOLO si pide cambiar cuántos van.' },
         newService:       { type: 'string',  enum: CRM_SERVICES, description: 'Nuevo servicio (nombre EXACTO de la lista). SOLO si pide cambiar de servicio.' },
         newCertification: { type: 'string',  description: 'Nueva titulación. SOLO si pide cambiarla.' },
+        newTotalPrice:    { type: 'integer', description: 'Si el cambio altera el precio: el precio TOTAL NUEVO de toda la reserva tras el cambio, en PHP — el mismo que le dices al cliente. Sin él, el total acordado de la reserva se queda en el de antes.' },
         dayIndex:         { type: 'integer', description: 'SOLO si el cambio es sobre UN día concreto de un pack a medida, no toda la reserva. Si se manda, newActivityDate/newService/newRentalStatus se aplican solo a ese día — deja fuera newNumPeople/newCertification, no aplican por día.' },
         newRentalStatus:  { type: 'string',  enum: ['included', 'extra', 'own'], description: 'Nuevo estado del equipo de alquiler PARA ESE DÍA. Solo tiene sentido junto con dayIndex.' },
         // Quitar un día entero del pack — el equivalente por días de dar de baja a un buceador.

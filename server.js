@@ -483,6 +483,9 @@ async function runTool(name, input, phone) {
           newNumPeople: (input.newNumPeople !== undefined && input.newNumPeople !== null) ? input.newNumPeople : null,
           newService: input.newService ? normalizeService(input.newService) : null,
           newCertification: input.newCertification || null,
+          // El total nuevo que se le ha dicho al cliente (02/10/2026): con la reserva en revisión el
+          // backend lo guarda como total acordado (si no, se quedaba el viejo).
+          newTotalPrice: Number.isInteger(input.newTotalPrice) ? input.newTotalPrice : null,
           newRentalStatus: input.newRentalStatus || null,
           dayIndex: (input.dayIndex !== undefined && input.dayIndex !== null) ? input.dayIndex : null,
           // Quitar un día entero del pack (el resto sigue en pie) — equivalente por días
